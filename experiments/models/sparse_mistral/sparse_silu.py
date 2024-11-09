@@ -41,6 +41,9 @@ from utils.utils import (
     ds_print,
 )
 
+from utils.constants import MISTRAL
+from transformers.configuration_utils import PretrainedConfig
+
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
@@ -284,7 +287,7 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
+def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -305,8 +308,8 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
-    cos = cos[position_ids].unsqueeze(unsqueeze_dim)
-    sin = sin[position_ids].unsqueeze(unsqueeze_dim)
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
@@ -334,6 +337,29 @@ def _get_unpad_data(attention_mask):
         cu_seqlens,
         max_seqlen_in_batch,
     )
+
+def get_sparse_config(
+    config: PretrainedConfig,
+    model_type: str = None,
+    use_sparse_model=False,
+    use_sparse_predictor=False,
+    use_sparse_regularization=False,
+    use_graceful_regularization=False,
+    thresholds=None,
+):
+    if model_type == MISTRAL:
+        new_config = SparseMistralConfig()
+    else:
+        new_config = SparseLlamaConfig()
+    new_config.__dict__.update(config.__dict__)
+    config = new_config
+    config.use_sparse_model = use_sparse_model
+    config.use_sparse_predictor = use_sparse_predictor
+    config.use_sparse_regularization = use_sparse_regularization
+    config.use_graceful_regularization = use_graceful_regularization
+    config.thresholds = thresholds
+
+    return config
 
 
 class SparseMistralFlashAttention(MistralFlashAttention2):
@@ -431,9 +457,9 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
 
         # Because the input can be padded, the absolute sequence length depends on the max position id.
         rotary_seq_len = max(kv_seq_len, position_ids[:, -1].max().item()) + 1
-        cos, sin = self.rotary_emb(value_states, seq_len=rotary_seq_len)
+        cos, sin = self.rotary_emb(value_states, position_ids)
 
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         use_sliding_windows = (
             _flash_supports_window_size
@@ -770,8 +796,8 @@ class SparseMistralAttention(MistralAttention):
                     "with a layer index."
                 )
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+        cos, sin = self.rotary_emb(value_states, position_ids)
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
@@ -1153,6 +1179,7 @@ class SparseMistralforCausalLM(MistralForCausalLM):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
+        print("Gautham: Hehe, I reached SMforCausualLLM.")
         if config.use_sparse_model:
             self.apply_sparse_mlp()
             if config.thresholds is not None:
@@ -1179,8 +1206,8 @@ class SparseMistralforCausalLM(MistralForCausalLM):
             self,
             config=self.config,
             use_sparse_regularization=self.config.use_sparse_regularization,
-            cut_pre_mlp=getattr(self.config, "cut_pre_mlp", False),
-            cut_pre_attn=getattr(self.config, "cut_pre_attn", False),
+            cut_pre_mlp=getattr(self.config, "cut_pre_mlp", True),
+            cut_pre_attn=getattr(self.config, "cut_pre_attn", True),
         )
 
     def apply_sparse_predictor(self, init_svd: bool = True):
@@ -1322,8 +1349,8 @@ def get_sparse_mistral_config(
     use_sparse_predictor=False,
     use_sparse_regularization=False,
     thresholds=None,
-    cut_pre_mlp=False,
-    cut_pre_attn=False,
+    cut_pre_mlp=True,
+    cut_pre_attn=True,
 ):
     new_config = SparseMistralConfig()
     new_config.__dict__.update(config.__dict__)
@@ -1343,8 +1370,8 @@ def apply_mistral_sparse_silu_mlp(
     config,
     use_sparse_regularization: bool = False,
     use_flash_attn: bool = False,
-    cut_pre_mlp: bool = False,
-    cut_pre_attn: bool = False,
+    cut_pre_mlp: bool = True,
+    cut_pre_attn: bool = True,
 ):
     for layer in model.model.layers:
         # counts += 1
@@ -1575,6 +1602,9 @@ def plot_histogram(
 
 def plot_activation_histogram(model, fig_dir: str = "figures"):
     for i, layer in enumerate(model.model.layers):
+        print("Just entered.")
+        print(isinstance(layer.self_attn, SparseMistralAttention))
+        print(layer.self_attn.is_stats)
         if (
             isinstance(layer.self_attn, SparseMistralAttention) and layer.self_attn.is_stats
         ):  # Can set the threshold only the relevant statistics is collected.
@@ -1584,7 +1614,7 @@ def plot_activation_histogram(model, fig_dir: str = "figures"):
             #     layer.self_attn.pre_attn_hist_counts,
             #     plot_title,
             # )
-
+            print("Saving figure.")
             plot_title = f"Layer: {i} Post QK_T Distribution"
             plot_histogram(
                 layer.self_attn.histogram_bins,

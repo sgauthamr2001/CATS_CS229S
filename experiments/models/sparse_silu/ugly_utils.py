@@ -381,6 +381,9 @@ def plot_histogram(
 def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str):
     SparseMLP = get_mlp_class(model)
 
+    print("SG: Check what's here, hehe.")
+    print(model)
+
     for i, layer in enumerate(model.model.layers):
         if isinstance(layer.mlp, SparseMLP) and layer.mlp.is_stats:
             # Can set the threshold only the relevant statistics is collected.

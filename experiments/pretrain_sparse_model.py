@@ -26,7 +26,8 @@ import time
 import warnings
 import json
 
-from experiments.models.sparse_silu.ugly_utils import *
+# from experiments.models.sparse_silu.ugly_utils import *
+from experiments.models.sparse_mistral.sparse_silu import *
 
 # from experiments.models.sparse_silu.callbacks import GracefulRegularizationScheduler
 # from trainer import SparseTrainer
@@ -95,13 +96,13 @@ def prepare_sparse_model(
                 num_hidden_layers=4,
             )
             if use_sparse_model:
-                config = get_sparse_config(config, model_type)
+                config = get_sparse_mistral_config(config)
                 model = SparseCausalLM(config=config)
             else:
                 model = BaseCausalLM(config=config)
         else:
             config = BaseConfig.from_pretrained(base_model_name)
-            config = get_sparse_config(config, model_type=model_type)
+            config = get_sparse_mistral_config(config)
             config.use_cache = True
             model = SparseCausalLM.from_pretrained(
                 base_model_name,
@@ -112,10 +113,10 @@ def prepare_sparse_model(
             model.config_class = SparseConfig
 
         if use_sparse_model:
-            apply_sparse_silu_mlp(model, model.config, use_sparse_regularization=use_sparse_regularization)
+            apply_mistral_sparse_silu_mlp(model, model.config, use_sparse_regularization=use_sparse_regularization)
             enable_sparse_silu(model)
         if use_sparse_predictor:
-            apply_sparse_decoder_layer(model, model.config, init_svd=not is_debugging)
+            apply_mistral_sparse_decoder_layer(model, model.config, init_svd=not is_debugging)
 
         model.config.use_sparse_predictor = use_sparse_predictor
         model.config.use_sparse_model = use_sparse_model
@@ -332,6 +333,8 @@ def train(exp_config, use_wandb: bool = True, use_sweep: bool = False):
     else:
         base_model = model
 
+    print(base_model)
+
     # Collect statistics and find the threshold for given sparsity
     if not use_graceful_regularization and exp_config.set_sparsity_aware_threshold:
         activate_stats(base_model)
@@ -362,16 +365,16 @@ def train(exp_config, use_wandb: bool = True, use_sweep: bool = False):
 
         ds_print("===Pre-training test Result==")
         ds_print(eval_result)
-        total_sparsity, _ = print_dead_neuron_stats(base_model)
-        ds_print(f"pre-training sparsity: {total_sparsity}")
+        #total_sparsity, _ = print_dead_neuron_stats(base_model)
+        #ds_print(f"pre-training sparsity: {total_sparsity}")
 
     # Plot activation histograms
     if is_plot:
         if is_running_deepspeed():
             if is_mainprocess():
-                plot_activation_histogram(base_model, fig_dir, bin_edge_dir)
+                plot_activation_histogram(base_model, fig_dir)
         else:
-            plot_activation_histogram(base_model, fig_dir, bin_edge_dir)
+            plot_activation_histogram(base_model, fig_dir)
 
     # Train Model after deactivating collecting statistics
     deactivate_stats(base_model)
