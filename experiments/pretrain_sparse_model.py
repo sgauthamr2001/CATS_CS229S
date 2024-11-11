@@ -27,7 +27,8 @@ import warnings
 import json
 
 # from experiments.models.sparse_silu.ugly_utils import *
-from experiments.models.sparse_mistral.sparse_silu import *
+# from experiments.models.sparse_mistral.sparse_silu import *
+from experiments.models.sparse_exp.ugly_utils import *
 
 # from experiments.models.sparse_silu.callbacks import GracefulRegularizationScheduler
 # from trainer import SparseTrainer
@@ -96,13 +97,13 @@ def prepare_sparse_model(
                 num_hidden_layers=4,
             )
             if use_sparse_model:
-                config = get_sparse_mistral_config(config)
+                config = get_sparse_config(config)
                 model = SparseCausalLM(config=config)
             else:
                 model = BaseCausalLM(config=config)
         else:
             config = BaseConfig.from_pretrained(base_model_name)
-            config = get_sparse_mistral_config(config)
+            config = get_sparse_config(config)
             config.use_cache = True
             model = SparseCausalLM.from_pretrained(
                 base_model_name,
@@ -113,10 +114,10 @@ def prepare_sparse_model(
             model.config_class = SparseConfig
 
         if use_sparse_model:
-            apply_mistral_sparse_silu_mlp(model, model.config, use_sparse_regularization=use_sparse_regularization)
+            apply_sparse_silu_mlp(model, model.config, use_sparse_regularization=use_sparse_regularization)
             enable_sparse_silu(model)
         if use_sparse_predictor:
-            apply_mistral_sparse_decoder_layer(model, model.config, init_svd=not is_debugging)
+            apply_sparse_decoder_layer(model, model.config, init_svd=not is_debugging)
 
         model.config.use_sparse_predictor = use_sparse_predictor
         model.config.use_sparse_model = use_sparse_model
@@ -222,9 +223,7 @@ def train(exp_config, use_wandb: bool = True, use_sweep: bool = False):
     bin_edge_dir = os.path.join(results_dir, "bin_edges")
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(bin_edge_dir, exist_ok=True)
-    act_hist_path = os.path.join(
-        exp_config.results_dir, folder_name, exp_config.model_name, f"{dataset_type}_activation_histogram.pt"
-    )
+    act_hist_path = os.path.join(exp_config.results_dir, folder_name, exp_config.model_name)
 
     # If not using sparse Mistral model, all flags related to sparse model should be set as zero or false.
     if not exp_config.use_sparse_model:
