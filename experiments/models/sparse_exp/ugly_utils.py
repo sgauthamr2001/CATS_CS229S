@@ -157,7 +157,7 @@ def apply_sparse_silu_mlp(
         new_mlp.gate_proj = original_mlp.gate_proj
         new_mlp.up_proj = original_mlp.up_proj
         new_mlp.down_proj = original_mlp.down_proj
-        new_mlp.cut_pre_mlp = True
+        new_mlp.cut_pre_mlp = False 
         layer.mlp = new_mlp
     
     print(attn)
@@ -356,8 +356,6 @@ def plot_histogram(
     
     if layer_index not in [0, 15, 31]:
         return 
-    
-    """
 
     if is_mainprocess():
         torch.save(bin_edges, f"{activation_histogram_dir}/bin_edges_{layer_index}.pt")
@@ -420,33 +418,83 @@ def plot_histogram(
 
     # Close the figure to free memory
     plt.close(fig)
-    """
-    y_logscale = False
-    plt.bar(bin_edges[:-1], histogram_counts, width=np.diff(bin_edges), edgecolor="black")
-    if y_logscale:
-        plt.yscale("log")
-        # Find the indices of the histogram counts that are not zero
-        non_zero_indices = np.nonzero(histogram_counts)
-        if non_zero_indices[0] > 0:
-            # Find the left boundary as the first non-zero bin edge
-            first_non_zero_index = non_zero_indices[0]
-            left = bin_edges[first_non_zero_index]  # This is your left boundary
-            # Find the right boundary as the last non-zero bin edge
-            last_non_zero_index = non_zero_indices[-1]
-            right = bin_edges[last_non_zero_index + 1]  # This is your right boundary
-        else:
-            # Default to the first and last bin edge if all counts are zero
-            left = bin_edges[0]
-            right = bin_edges[-1]
-        plt.xlim(left, right)
-    plt.title(title)
-    plt.xlabel("Activation Value")
-    plt.ylabel("Frequency")
+
+def plot_histogram_log(
+    bin_edges,
+    histogram_counts: torch.tensor,
+    threshold: float = 0.5,
+    title: str = "Activation Distribution",
+    fig_dir: str = "figures",
+    activation_histogram_dir: str = None,
+    layer_index: int = 0,
+):
+    
+    if layer_index not in [0, 15, 31]:
+        return 
+
+    if is_mainprocess():
+        torch.save(bin_edges, f"{activation_histogram_dir}/bin_edges_{layer_index}.pt")
+        torch.save(histogram_counts, f"{activation_histogram_dir}/histogram_counts_{layer_index}.pt")
+
+    fig, ax = plt.subplots()
+
+    # Plot the bars for activations within the threshold
+    within_threshold_mask = (bin_edges[:-1] >= -threshold) & (bin_edges[:-1] <= threshold)
+    ax.bar(
+        bin_edges[:-1][within_threshold_mask][:-1],
+        histogram_counts[within_threshold_mask][:-1],
+        width=np.diff(bin_edges[:-1][within_threshold_mask]),
+        # edgecolor="black",
+        color="#227CF6",
+        alpha=0.2,
+        label="Within Threshold",
+    )
+
+    # # Plot the bars for activations outside the threshold
+    outside_threshold_mask = ~within_threshold_mask
+    ax.bar(
+        bin_edges[:-1][outside_threshold_mask][:-1],
+        histogram_counts[outside_threshold_mask][:-1],
+        width=np.diff(bin_edges[:-1][outside_threshold_mask]),
+        # edgecolor="black",
+        color="#227CF6",
+        alpha=1.0,
+        label="Outside Threshold",
+        clip_on=False,
+    )
+
+    # Plot the threshold lines
+    ax.axvline(
+        x=threshold,
+        color="#227CF6",
+        alpha=0.6,
+        linestyle="--",
+        label="Threshold",
+    )
+    # ax.axvline(x=-threshold, color="#227CF6", alpha=0.3, linestyle="--")
+    ax.axvline(x=0, color="#227CF6", alpha=0.3, linestyle="--")
+
+    # Set the title and labels
+    # ax.set_title(title)
+    ax.set_xlabel("Activation Value")
+    ax.set_ylabel("Frequency")
+
+    ax.set_xlim(0, 1)
+
+    ax.set_yscale("log")
+
+    # Add legend
+    ax.legend()
+
+    # Create the figures directory if it doesn't exist
     os.makedirs(fig_dir, exist_ok=True)
+
+    # Save the figure
     plt.savefig(f"{fig_dir}/{title}.png")
     # plt.show()
-    plt.clf()
 
+    # Close the figure to free memory
+    plt.close(fig)
 
 
 def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str):
@@ -468,18 +516,8 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 layer_index=i,
             )
         if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)) and layer.self_attn.is_stats:
-            plot_title = f"Layer: {i} Pre-Attention Distribution"
-            plot_histogram(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.pre_attn_hist_counts,
-                layer.self_attn.pre_attn_threshold,
-                plot_title,
-                fig_dir,
-                activation_histogram_dir,
-                layer_index=i,
-            )
             plot_title = f"Layer: {i} Post QK_T Distribution"
-            plot_histogram(
+            plot_histogram_log(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_qk_hist_counts,
                 layer.self_attn.post_qk_threshold,
@@ -1025,8 +1063,8 @@ class SparseMistralAttention(MistralAttention):
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
         bsz, q_len, _ = hidden_states.size()
-        mask = abs(hidden_states - hidden_states.mean()) < self.pre_attn_threshold
-        hidden_states[mask] = 0
+        #mask = abs(hidden_states - hidden_states.mean()) < self.pre_attn_threshold
+        #hidden_states[mask] = 0
 
         if self.is_stats:
             self.pre_attn_hist_counts += torch.cat(
