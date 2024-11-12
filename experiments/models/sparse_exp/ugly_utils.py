@@ -147,7 +147,7 @@ def apply_sparse_silu_mlp(
     config,
     use_sparse_regularization: bool = False,
     use_flash_attn: bool = False,
-    attn: bool = False, 
+    attn: bool = True, 
 ):
     SparseMLP  = get_mlp_class(model)
 
@@ -159,7 +159,9 @@ def apply_sparse_silu_mlp(
         new_mlp.down_proj = original_mlp.down_proj
         layer.mlp = new_mlp
     
+    print(attn)
     if(attn):
+        print("Using custom attention.")
         SparseAttn = get_attn_class(model, use_flash_attn)
 
         for layer in model.model.layers: 
@@ -228,7 +230,7 @@ def activate_stats(model, is_collect_histogram: bool = True):
         if isinstance(layer.mlp, SparseMLP):
             layer.mlp.activate_stats(is_collect_histogram=is_collect_histogram)
         if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)):
-            layer.self_attn.activate_stats(is_collect_histogram=is_collect_histogram)
+            layer.self_attn.activate_stats()
 
 def deactivate_stats(
     model,
@@ -344,6 +346,10 @@ def plot_histogram(
     activation_histogram_dir: str = None,
     layer_index: int = 0,
 ):
+    
+    if layer_index not in [0, 15, 31]:
+        return 
+
     if is_mainprocess():
         torch.save(bin_edges, f"{activation_histogram_dir}/bin_edges_{layer_index}.pt")
         torch.save(histogram_counts, f"{activation_histogram_dir}/histogram_counts_{layer_index}.pt")
@@ -938,8 +944,8 @@ class SparseMistralAttention(MistralAttention):
         self.is_collect_histogram = False
         num_bins = 20000
         self.num_bins = num_bins
-        self.hist_min = -2
-        self.hist_max = 2
+        self.hist_min = 0
+        self.hist_max = 1.5
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
         self.post_qk_hist_counts = torch.zeros(num_bins - 1)
@@ -1075,10 +1081,10 @@ class MistralSparseSiluMLP(MistralMLP):
 
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 20000
+        num_bins = 1000
         self.num_bins = num_bins
-        self.hist_min = -2
-        self.hist_max = 2
+        self.hist_min = -1
+        self.hist_max = 1
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
         self.pre_mlp_std = 0

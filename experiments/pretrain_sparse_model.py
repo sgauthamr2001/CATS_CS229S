@@ -223,7 +223,7 @@ def train(exp_config, use_wandb: bool = True, use_sweep: bool = False):
     bin_edge_dir = os.path.join(results_dir, "bin_edges")
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(bin_edge_dir, exist_ok=True)
-    act_hist_path = os.path.join(exp_config.results_dir, folder_name, exp_config.model_name)
+    act_hist_path = os.path.join(exp_config.results_dir, folder_name, exp_config.model_name, "hist_files")
 
     # If not using sparse Mistral model, all flags related to sparse model should be set as zero or false.
     if not exp_config.use_sparse_model:
@@ -371,9 +371,9 @@ def train(exp_config, use_wandb: bool = True, use_sweep: bool = False):
     if is_plot:
         if is_running_deepspeed():
             if is_mainprocess():
-                plot_activation_histogram(base_model, fig_dir)
+                plot_activation_histogram(base_model, fig_dir, bin_edge_dir)
         else:
-            plot_activation_histogram(base_model, fig_dir)
+            plot_activation_histogram(base_model, fig_dir, bin_edge_dir)
 
     # Train Model after deactivating collecting statistics
     deactivate_stats(base_model)
