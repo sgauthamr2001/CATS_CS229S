@@ -157,6 +157,7 @@ def apply_sparse_silu_mlp(
         new_mlp.gate_proj = original_mlp.gate_proj
         new_mlp.up_proj = original_mlp.up_proj
         new_mlp.down_proj = original_mlp.down_proj
+        new_mlp.cut_pre_mlp = True
         layer.mlp = new_mlp
     
     print(attn)
@@ -655,6 +656,7 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
         self.hist_max = 2
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
+        self.pre_mlp_std = 0
         self.pre_act_hist_counts = torch.zeros(num_bins - 1)
         self.post_act_hist_counts = torch.zeros(num_bins - 1)
 
