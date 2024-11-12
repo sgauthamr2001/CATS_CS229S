@@ -355,6 +355,8 @@ def plot_histogram(
     
     if layer_index not in [0, 15, 31]:
         return 
+    
+    """
 
     if is_mainprocess():
         torch.save(bin_edges, f"{activation_histogram_dir}/bin_edges_{layer_index}.pt")
@@ -417,6 +419,34 @@ def plot_histogram(
 
     # Close the figure to free memory
     plt.close(fig)
+    """
+    y_logscale = False
+    plt.bar(bin_edges[:-1], histogram_counts, width=np.diff(bin_edges), edgecolor="black")
+    if y_logscale:
+        plt.yscale("log")
+        # Find the indices of the histogram counts that are not zero
+        non_zero_indices = np.nonzero(histogram_counts)
+        if non_zero_indices[0] > 0:
+            # Find the left boundary as the first non-zero bin edge
+            first_non_zero_index = non_zero_indices[0]
+            left = bin_edges[first_non_zero_index]  # This is your left boundary
+            # Find the right boundary as the last non-zero bin edge
+            last_non_zero_index = non_zero_indices[-1]
+            right = bin_edges[last_non_zero_index + 1]  # This is your right boundary
+        else:
+            # Default to the first and last bin edge if all counts are zero
+            left = bin_edges[0]
+            right = bin_edges[-1]
+        plt.xlim(left, right)
+    plt.title(title)
+    plt.xlabel("Activation Value")
+    plt.ylabel("Frequency")
+    os.makedirs(fig_dir, exist_ok=True)
+    plt.savefig(f"{fig_dir}/{title}.png")
+    # plt.show()
+    plt.clf()
+
+
 
 def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str):
     SparseMLP = get_mlp_class(model)
