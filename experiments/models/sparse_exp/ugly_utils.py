@@ -330,11 +330,17 @@ def set_sparse_threshold(model, sparsity_level: float, use_relu: bool = False):
                 layer.mlp.regularization_threshold = layer.mlp.dead_threshold * 1.2  # TODO: find better param
        
         if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)):
+            layer.self_attn.pre_attn_threshold = get_threshold(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.pre_attn_hist_counts,
+                sparsity_level,
+            )
             layer.self_attn.post_qk_threshold = get_threshold(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_qk_hist_counts,
                 sparsity_level,
             )
+            ds_print(f"layer {i} pre_attn_threshold: {layer.self_attn.pre_attn_threshold}")
             ds_print(f"layer {i} post_qk_threshold: {layer.self_attn.post_qk_threshold}")            
 
 def plot_histogram(
@@ -431,6 +437,16 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 layer_index=i,
             )
         if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)) and layer.self_attn.is_stats:
+            plot_title = f"Layer: {i} Pre-Attention Distribution"
+            plot_histogram(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.pre_attn_hist_counts,
+                layer.self_attn.pre_attn_threshold,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
             plot_title = f"Layer: {i} Post QK_T Distribution"
             plot_histogram(
                 layer.self_attn.histogram_bins,
@@ -441,6 +457,7 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 activation_histogram_dir,
                 layer_index=i,
             )
+            
 
 def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_hist"):
     os.makedirs(dirname, exist_ok=True)
@@ -469,6 +486,7 @@ def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_
         ):  # Can set the threshold only the relevant statistics is collected.
             act_dict[i] = (
                 layer.self_attn.histogram_bins,
+                layer.self_attn.pre_attn_hist_counts,
                 layer.self_attn.post_qk_hist_counts,
             )
     ds_print("Saving activation histograms...\n\n\n")
@@ -944,10 +962,11 @@ class SparseMistralAttention(MistralAttention):
         self.is_collect_histogram = False
         num_bins = 20000
         self.num_bins = num_bins
-        self.hist_min = 0
-        self.hist_max = 1.5
+        self.hist_min = -2
+        self.hist_max = 2
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
+        self.pre_attn_hist_counts = torch.zeros(num_bins - 1)
         self.post_qk_hist_counts = torch.zeros(num_bins - 1)
 
     def activate_stats(self):
@@ -974,6 +993,22 @@ class SparseMistralAttention(MistralAttention):
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
         bsz, q_len, _ = hidden_states.size()
+        mask = abs(hidden_states - hidden_states.mean()) < self.pre_attn_threshold
+        hidden_states[mask] = 0
+
+        if self.is_stats:
+            self.pre_attn_hist_counts += torch.cat(
+                (
+                    (hidden_states < self.hist_min).sum().unsqueeze(0),
+                    torch.histc(
+                        hidden_states.float(),
+                        bins=self.num_bins - 3,
+                        min=self.hist_min,
+                        max=self.hist_max,
+                    ),
+                    (hidden_states > self.hist_max).sum().unsqueeze(0),
+                )
+            ).cpu()
 
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
