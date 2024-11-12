@@ -1428,16 +1428,14 @@ class SparseMistralforCausalLM(MistralForCausalLM):
             self.apply_sparse_predictor(init_svd=config.init_svd)
 
     def apply_sparse_mlp(self):
-        apply_mistral_sparse_silu_mlp(
+        apply_sparse_silu_mlp(
             self,
             config=self.config,
             use_sparse_regularization=self.config.use_sparse_regularization,
-            cut_pre_mlp=getattr(self.config, "cut_pre_mlp", True),
-            cut_pre_attn=getattr(self.config, "cut_pre_attn", True),
         )
 
     def apply_sparse_predictor(self, init_svd: bool = True):
-        apply_mistral_sparse_decoder_layer(self, config=self.config, init_svd=init_svd)
+        apply_sparse_decoder_layer(self, config=self.config, init_svd=init_svd)
 
 # LLAMA
 
