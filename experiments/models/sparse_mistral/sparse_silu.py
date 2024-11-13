@@ -1601,7 +1601,12 @@ def plot_histogram(
 
 
 def plot_activation_histogram(model, fig_dir: str = "figures"):
+    
     for i, layer in enumerate(model.model.layers):
+
+        if i not in [0, 15, 31]:
+            return 
+
         print("Just entered.")
         print(isinstance(layer.self_attn, SparseMistralAttention))
         print(layer.self_attn.is_stats)

@@ -120,7 +120,7 @@ class SparseSiLU(nn.SiLU):
         return self.m(act) - self.m(-act)
 
 def get_sparse_config(
-    config: PretrainedConfig,
+    config: MistralConfig,
     model_type: str = None,
     use_sparse_model=False,
     use_sparse_predictor=False,

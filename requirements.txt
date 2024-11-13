@@ -35,7 +35,7 @@ chex>=0.1.7
 py7zr
 accelerate
 wandb
-deepspeed
+deepspeed==0.15.2
 equinox # latest: 0.11.2
 transformers==4.36.2
 triton==2.1.0
