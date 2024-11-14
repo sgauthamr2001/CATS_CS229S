@@ -1241,9 +1241,6 @@ class SparseMistralAttention(MistralAttention):
         attn_mean = attn_weights.mean(dim=-1)
         attn_mean = attn_mean.unsqueeze(-1)
 
-        print(attn_var.shape)
-        print(attn_mean.shape)
-
         if self.is_stats:
             self.post_qk_mean_counts += torch.cat(
                 (
