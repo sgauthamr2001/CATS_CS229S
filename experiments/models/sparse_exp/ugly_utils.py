@@ -419,7 +419,7 @@ def plot_histogram(
     ax.set_xlabel("Activation Value")
     ax.set_ylabel("Frequency")
 
-    ax.set_xlim(-0.7, 0.7)
+    ax.set_xlim(0, 1.2)
 
     # Add legend
     ax.legend()
@@ -1098,7 +1098,7 @@ class SparseMistralAttention(MistralAttention):
 
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 5000
+        num_bins = 1000
         self.num_bins = num_bins
         self.hist_min = 0
         self.hist_max = 2
@@ -1240,11 +1240,11 @@ class SparseMistralAttention(MistralAttention):
                 )
             ).cpu()
 
-        mask = attn_weights < 0.01
-        attn_weights[mask] = 0
-        true_count = mask.sum() 
-        total_count = mask.numel()
-        print(f"Killed {true_count/total_count} out of the attentions")
+        # mask = attn_weights < 0.01
+        # attn_weights[mask] = 0
+        # true_count = mask.sum() 
+        # total_count = mask.numel()
+        # print(f"Killed {true_count/total_count} out of the attentions")
 
         if self.is_stats:
 
