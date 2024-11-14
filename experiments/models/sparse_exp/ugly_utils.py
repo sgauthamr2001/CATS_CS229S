@@ -127,7 +127,6 @@ def get_sparse_config(
     use_sparse_regularization=False,
     use_graceful_regularization=False,
     thresholds=None,
-    thresholds_attn=None,
 ):
     if model_type == MISTRAL:
         new_config = SparseMistralConfig()
@@ -140,8 +139,6 @@ def get_sparse_config(
     config.use_sparse_regularization = use_sparse_regularization
     config.use_graceful_regularization = use_graceful_regularization
     config.thresholds = thresholds
-    config.thresholds_attn = thresholds_attn
-
     return config
 
 def apply_sparse_silu_mlp(
@@ -1246,6 +1243,11 @@ class SparseMistralAttention(MistralAttention):
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+
+        attn_threshold = 3e-5
+        mask = attn_weights < attn_threshold
+        attn_weights[mask] = 0
+
         if self.is_stats:
             self.post_qk_hist_counts += torch.cat(
                 (
@@ -1649,12 +1651,6 @@ class SparseMistralforCausalLM(MistralForCausalLM):
                         m.mlp.kill_sparse_swish_outputs = True
                         m.mlp.use_relu = getattr(config, "use_relu", False)
                         m.mlp.use_resilu = getattr(config, "use_resilu", False)
-                    if isinstance(
-                        m.self_attn,
-                        (SparseMistralAttention, SparseMistralFlashAttention),
-                    ):
-                        m.self_attn.post_qk_threshold = config.thresholds_attn[idx]
-                        m.self_attn.pre_attn_threshold = config.pre_attn_thresholds[idx]
         if config.use_sparse_predictor:
             self.apply_sparse_predictor(init_svd=config.init_svd)
 
