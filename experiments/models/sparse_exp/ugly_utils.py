@@ -1092,6 +1092,9 @@ class SparseMistralAttention(MistralAttention):
         self.is_stats = False
         self.pre_attn_std = 0
         self.pre_attn_threshold = 0
+        self.post_qk_threshold = -1
+        self.post_q_threshold = 0
+        self.post_k_threshold = 0
 
         # Activation Histograms
         self.is_collect_histogram = False
