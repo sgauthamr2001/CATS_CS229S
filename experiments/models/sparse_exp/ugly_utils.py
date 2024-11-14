@@ -127,6 +127,7 @@ def get_sparse_config(
     use_sparse_regularization=False,
     use_graceful_regularization=False,
     thresholds=None,
+    thresholds_attn=None,
 ):
     if model_type == MISTRAL:
         new_config = SparseMistralConfig()
@@ -139,6 +140,7 @@ def get_sparse_config(
     config.use_sparse_regularization = use_sparse_regularization
     config.use_graceful_regularization = use_graceful_regularization
     config.thresholds = thresholds
+    config.thresholds_attn = thresholds_attn
 
     return config
 
@@ -163,7 +165,7 @@ def apply_sparse_silu_mlp(
     print(attn)
     if(attn):
         print("Using custom attention.")
-        SparseAttn = get_attn_class(model, use_flash_attn)
+        SparseAttn = get_attn_class(model, False)
 
         for layer in model.model.layers: 
             original_attn = layer.self_attn
@@ -745,7 +747,7 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
         self.visit_counts = 0
         self.is_stats = False
         self.pre_attn_std = 0
-        self.post_qk_threshold = 0
+        self.post_qk_threshold = -1
         self.post_q_threshold = 0
         self.post_k_threshold = 0
 
@@ -1235,13 +1237,24 @@ class SparseMistralAttention(MistralAttention):
                 )
             ).cpu()
 
-        attn_var = attn_weights.var(dim=-1, unbiased=False)
-        attn_var = attn_var.unsqueeze(-1)
-
-        attn_mean = attn_weights.mean(dim=-1)
-        attn_mean = attn_mean.unsqueeze(-1)
+            if(self.post_qk_threshold != -1):
+                print("Killing OK attentions....")
+                mask = attn_weights < self.post_qk_threshold
+                attn_weights[mask] = 0
+                # Percentage of killed attentions
+                # count true in mask 
+                true_count = mask.sum() 
+                total_count = mask.numel()
+                print(f"Killed {true_count/total_count} out of the attentions")
 
         if self.is_stats:
+
+            attn_var = attn_weights.var(dim=-1, unbiased=False)
+            attn_var = attn_var.unsqueeze(-1)
+
+            attn_mean = attn_weights.mean(dim=-1)
+            attn_mean = attn_mean.unsqueeze(-1)
+
             self.post_qk_mean_counts += torch.cat(
                 (
                     (attn_mean < self.hist_min).sum().unsqueeze(0),
@@ -1621,6 +1634,7 @@ class SparseMistralforCausalLM(MistralForCausalLM):
                         m.self_attn,
                         (SparseMistralAttention, SparseMistralFlashAttention),
                     ):
+                        m.self_attn.post_qk_threshold = config.thresholds_attn[idx]
                         m.self_attn.pre_attn_threshold = config.pre_attn_thresholds[idx]
         if config.use_sparse_predictor:
             self.apply_sparse_predictor(init_svd=config.init_svd)
