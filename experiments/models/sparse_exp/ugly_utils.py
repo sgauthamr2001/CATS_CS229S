@@ -1240,15 +1240,11 @@ class SparseMistralAttention(MistralAttention):
                 )
             ).cpu()
 
-            if(self.post_qk_threshold != -1):
-                print("Killing OK attentions....")
-                mask = attn_weights < self.post_qk_threshold
-                attn_weights[mask] = 0
-                # Percentage of killed attentions
-                # count true in mask 
-                true_count = mask.sum() 
-                total_count = mask.numel()
-                print(f"Killed {true_count/total_count} out of the attentions")
+        mask = attn_weights < 0.01
+        attn_weights[mask] = 0
+        true_count = mask.sum() 
+        total_count = mask.numel()
+        print(f"Killed {true_count/total_count} out of the attentions")
 
         if self.is_stats:
 
