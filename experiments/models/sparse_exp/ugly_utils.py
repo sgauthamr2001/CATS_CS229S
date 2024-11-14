@@ -549,7 +549,7 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 activation_histogram_dir,
                 layer_index=i,
             )
-            plot_tille = f"Layer: {i} K Distribution"
+            plot_title = f"Layer: {i} K Distribution"
             plot_histogram(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_k_hist_counts,
@@ -1235,8 +1235,14 @@ class SparseMistralAttention(MistralAttention):
                 )
             ).cpu()
 
-        attn_var  = attn_weights.var(dim=-1, unbiased=False)
+        attn_var = attn_weights.var(dim=-1, unbiased=False)
+        attn_var = attn_var.unsqueeze(-1)
+
         attn_mean = attn_weights.mean(dim=-1)
+        attn_mean = attn_mean.unsqueeze(-1)
+
+        print(attn_var.shape)
+        print(attn_mean.shape)
 
         if self.is_stats:
             self.post_qk_mean_counts += torch.cat(
@@ -1260,6 +1266,7 @@ class SparseMistralAttention(MistralAttention):
                         min=self.hist_min,
                         max=self.hist_max,
                     ),
+                    (attn_var > self.hist_max).sum().unsqueeze(0),
                 )
             ).cpu()
 
