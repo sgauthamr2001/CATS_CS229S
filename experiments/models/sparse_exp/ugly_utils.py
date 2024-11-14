@@ -351,6 +351,7 @@ def set_sparse_threshold(model, sparsity_level: float, use_relu: bool = False):
                 layer.self_attn.post_k_hist_counts,
                 sparsity_level,
             )
+            
             ds_print(f"layer {i} pre_attn_threshold: {layer.self_attn.pre_attn_threshold}")
             ds_print(f"layer {i} post_qk_threshold: {layer.self_attn.post_qk_threshold}")           
             ds_print(f"layer {i} post_q_threshold: {layer.self_attn.post_q_threshold}")
@@ -539,7 +540,7 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 layer_index=i,
             )
             plot_title = f"Layer: {i} Q Distribution"
-            plot_histogram_log(
+            plot_histogram(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_q_hist_counts,
                 layer.self_attn.post_q_threshold,
@@ -549,10 +550,30 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 layer_index=i,
             )
             plot_tille = f"Layer: {i} K Distribution"
-            plot_histogram_log(
+            plot_histogram(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_k_hist_counts,
                 layer.self_attn.post_k_threshold,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
+            plot_title = f"Layer: {i} QK-Var Distribution"
+            plot_histogram_log(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_qk_var_counts,
+                0,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
+            plot_title = f"Layer: {i} QK-Mean Distribution"
+            plot_histogram_log(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_qk_mean_counts,
+                0,
                 plot_title,
                 fig_dir,
                 activation_histogram_dir,
@@ -589,7 +610,9 @@ def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_
                 layer.self_attn.histogram_bins,
                 layer.self_attn.pre_attn_hist_counts,
                 layer.self_attn.post_qk_hist_counts,
-                layer.self_attn.post_q_hist_counts, 
+                layer.self_attn.post_qk_var_counts,
+                layer.self_attn.post_qk_mean_counts,
+                layer.self_attn.post_q_hist_counts,
                 layer.self_attn.post_k_hist_counts,
             )
     ds_print("Saving activation histograms...\n\n\n")
@@ -618,6 +641,8 @@ def load_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_
                 layer.self_attn.histogram_bins,
                 layer.self_attn.pre_attn_hist_counts,
                 layer.self_attn.post_qk_hist_counts,
+                layer.self_attn.post_qk_var_counts,
+                layer.self_attn.post_qk_mean_counts,
                 layer.self_attn.post_q_hist_counts,
                 layer.self_attn.post_k_hist_counts,
             ) = act_dict[i]
@@ -1068,7 +1093,7 @@ class SparseMistralAttention(MistralAttention):
 
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 20000
+        num_bins = 5000
         self.num_bins = num_bins
         self.hist_min = 0
         self.hist_max = 2
@@ -1076,6 +1101,8 @@ class SparseMistralAttention(MistralAttention):
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
         self.pre_attn_hist_counts = torch.zeros(num_bins - 1)
         self.post_qk_hist_counts = torch.zeros(num_bins - 1)
+        self.post_qk_mean_counts = torch.zeros(num_bins - 1)
+        self.post_qk_var_counts = torch.zeros(num_bins - 1)
         self.post_q_hist_counts = torch.zeros(num_bins - 1)
         self.post_k_hist_counts = torch.zeros(num_bins - 1)
 
@@ -1207,6 +1234,36 @@ class SparseMistralAttention(MistralAttention):
                     (attn_weights > self.hist_max).sum().unsqueeze(0),
                 )
             ).cpu()
+
+        attn_var  = attn_weights.var(dim=-1, unbiased=False)
+        attn_mean = attn_weights.mean(dim=-1)
+
+        if self.is_stats:
+            self.post_qk_mean_counts += torch.cat(
+                (
+                    (attn_mean < self.hist_min).sum().unsqueeze(0),
+                    torch.histc(
+                        attn_mean.float(),
+                        bins=self.num_bins - 3,
+                        min=self.hist_min,
+                        max=self.hist_max,
+                    ),
+                    (attn_mean > self.hist_max).sum().unsqueeze(0),
+                )
+            ).cpu()
+            self.post_qk_var_counts += torch.cat(
+                (
+                    (attn_var < self.hist_min).sum().unsqueeze(0),
+                    torch.histc(
+                        attn_var.float(),
+                        bins=self.num_bins - 3,
+                        min=self.hist_min,
+                        max=self.hist_max,
+                    ),
+                )
+            ).cpu()
+
+
         attn_output = torch.matmul(attn_weights, value_states)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
