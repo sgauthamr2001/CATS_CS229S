@@ -39,7 +39,7 @@ bash scripts/plot_mlp_histogram.sh $ckpt_path $result_path
 # python experiments/plot_act_sparsity.py
 
 # 4. Experiments for Table 1. Results are saved in "output/"
-bash scripts/zero_shot_evaluation_without_general_finetuning.sh $ckpt_path $result_path
+# bash scripts/zero_shot_evaluation_without_general_finetuning.sh $ckpt_path $result_path
 
 # 5. Experiments for Table 2 and 3
 # bash scripts/instruction_tuning.sh $ckpt_path $result_path

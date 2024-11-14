@@ -14,11 +14,11 @@
 #        --output_path ${2}/evaluations/llama_7b_hf
 
 # Llama 50%, 70%, and 90%
-# initial_steps=0
-# step_increment=1
-# max_iterations=1
-# is_first_training=1
-# targeted_sparsity_list=(0.5 0.7 0.9)
+initial_steps=0
+step_increment=1
+max_iterations=1
+is_first_training=1
+targeted_sparsity_list=(0.5)
 # model_name="sparse_llama_7b_hf"
 # base_model_repo_id="meta-llama/Llama-2-7b-hf"
 
@@ -112,7 +112,7 @@ for targeted_sparsity in "${targeted_sparsity_list[@]}"; do
         --use_sparse_model --targeted_sparsity $targeted_sparsity \
         --set_sparsity_aware_threshold --print_sparsity \
         --use_wandb --max_steps $current_steps --model_save \
-        --train_batch_size 1 --test_batch_size 4 --use_flash_attn --gradient_accumulation_steps 8 \
+        --train_batch_size 1 --test_batch_size 4 --gradient_accumulation_steps 8 \
         --ds_config_path ds_config.json --max_seq_length 1024  \
         --checkpoint_dir $1 --results_dir $2 --is_first_training $is_first_training \
         --gradient_checkpointing \

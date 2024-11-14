@@ -376,53 +376,73 @@ def plot_histogram(
         torch.save(bin_edges, f"{activation_histogram_dir}/bin_edges_{layer_index}.pt")
         torch.save(histogram_counts, f"{activation_histogram_dir}/histogram_counts_{layer_index}.pt")
 
-    fig, ax = plt.subplots()
+    plt.bar(bin_edges[:-1], histogram_counts, width=np.diff(bin_edges), edgecolor="#227CF6")
+    y_logscale = True
+    if y_logscale:
+        plt.yscale("log")
+        # Find the indices of the histogram counts that are not zero
+        non_zero_indices = np.nonzero(histogram_counts)
+        if non_zero_indices[0] > 0:
+            # Find the left boundary as the first non-zero bin edge
+            first_non_zero_index = non_zero_indices[0]
+            left = bin_edges[first_non_zero_index]  # This is your left boundary
+            # Find the right boundary as the last non-zero bin edge
+            last_non_zero_index = non_zero_indices[-1]
+            right = bin_edges[last_non_zero_index + 1]  # This is your right boundary
+        else:
+            # Default to the first and last bin edge if all counts are zero
+            left = bin_edges[0]
+            right = bin_edges[-1]
+        plt.xlim(left, right)
+    plt.title(title)
+    plt.xlabel("Activation Value")
+    plt.ylabel("Frequency")
 
     # Plot the bars for activations within the threshold
-    within_threshold_mask = (bin_edges[:-1] >= -threshold) & (bin_edges[:-1] <= threshold)
-    ax.bar(
-        bin_edges[:-1][within_threshold_mask][:-1],
-        histogram_counts[within_threshold_mask][:-1],
-        width=np.diff(bin_edges[:-1][within_threshold_mask]),
+    # within_threshold_mask = (bin_edges[:-1] >= -threshold) & (bin_edges[:-1] <= threshold)
+    # ax.bar(
+    #    bin_edges[:-1][within_threshold_mask][:-1],
+    #    histogram_counts[within_threshold_mask][:-1],
+    #    width=np.diff(bin_edges[:-1][within_threshold_mask]),
         # edgecolor="black",
-        color="#227CF6",
-        alpha=0.2,
-        label="Within Threshold",
-    )
+    #    color="#227CF6",
+    #    alpha=0.2,
+    #    label="Within Threshold",
+    #)
 
     # # Plot the bars for activations outside the threshold
-    outside_threshold_mask = ~within_threshold_mask
-    ax.bar(
-        bin_edges[:-1][outside_threshold_mask][:-1],
-        histogram_counts[outside_threshold_mask][:-1],
-        width=np.diff(bin_edges[:-1][outside_threshold_mask]),
+    #outside_threshold_mask = ~within_threshold_mask
+    #ax.bar(
+    #    bin_edges[:-1][outside_threshold_mask][:-1],
+    #    histogram_counts[outside_threshold_mask][:-1],
+    #    width=np.diff(bin_edges[:-1][outside_threshold_mask]),
         # edgecolor="black",
-        color="#227CF6",
-        alpha=1.0,
-        label="Outside Threshold",
-        clip_on=False,
-    )
+    #    color="#227CF6",
+    #    alpha=1.0,
+    #    label="Outside Threshold",
+    #    clip_on=False,
+    #)
 
     # Plot the threshold lines
-    ax.axvline(
-        x=threshold,
-        color="#227CF6",
-        alpha=0.6,
-        linestyle="--",
-        label="Threshold",
-    )
-    # ax.axvline(x=-threshold, color="#227CF6", alpha=0.3, linestyle="--")
-    ax.axvline(x=0, color="#227CF6", alpha=0.3, linestyle="--")
+    #ax.axvline(
+    #    x=threshold,
+    #    color="#227CF6",
+    #    alpha=0.6,
+    #    linestyle="--",
+    #    label="Threshold",
+    #)
+    ## ax.axvline(x=-threshold, color="#227CF6", alpha=0.3, linestyle="--")
+    #ax.axvline(x=0, color="#227CF6", alpha=0.3, linestyle="--")
 
     # Set the title and labels
     # ax.set_title(title)
-    ax.set_xlabel("Activation Value")
-    ax.set_ylabel("Frequency")
+    #ax.set_xlabel("Activation Value")
+    #ax.set_ylabel("Frequency")
 
-    ax.set_xlim(0, 1.2)
+    #ax.set_xlim(0, 10.5)
 
     # Add legend
-    ax.legend()
+    #ax.legend()
 
     # Create the figures directory if it doesn't exist
     os.makedirs(fig_dir, exist_ok=True)
@@ -432,7 +452,7 @@ def plot_histogram(
     # plt.show()
 
     # Close the figure to free memory
-    plt.close(fig)
+    plt.clf()
 
 def plot_histogram_log(
     bin_edges,
@@ -532,7 +552,7 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
             )
         if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)) and layer.self_attn.is_stats:
             plot_title = f"Layer: {i} Post QK_T Distribution"
-            plot_histogram_log(
+            plot_histogram(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_qk_hist_counts,
                 layer.self_attn.post_qk_threshold,
@@ -562,7 +582,7 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 layer_index=i,
             )
             plot_title = f"Layer: {i} QK-Var Distribution"
-            plot_histogram_log(
+            plot_histogram(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_qk_var_counts,
                 0,
@@ -572,7 +592,7 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
                 layer_index=i,
             )
             plot_title = f"Layer: {i} QK-Mean Distribution"
-            plot_histogram_log(
+            plot_histogram(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_qk_mean_counts,
                 0,
@@ -1098,10 +1118,10 @@ class SparseMistralAttention(MistralAttention):
 
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 1000
+        num_bins = 20000
         self.num_bins = num_bins
         self.hist_min = 0
-        self.hist_max = 2
+        self.hist_max = 1
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
         self.pre_attn_hist_counts = torch.zeros(num_bins - 1)
