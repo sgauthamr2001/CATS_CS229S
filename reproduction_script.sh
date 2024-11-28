@@ -1,18 +1,17 @@
 #!/bin/bash
 
 set -e
-
 # Install the requirements
-pip install -e .
+#pip install -e .
 # pip install -r requirements.txt
-pip install flash-attn --no-build-isolation
+#pip install flash-attn --no-build-isolation
 
-accelerate config
+#accelerate config
 
 # Install the flash_gemv package
-cd flash_gemv
-pip install -e .
-cd ..
+#cd flash_gemv
+#pip install -e .
+#cd ..
 
 # Get the root folder for faster_transformer
 export PYTHONPATH=${PYTHONPATH}:$PWD
@@ -24,7 +23,7 @@ export CATS_CKPTPATH="$project_path/$ckpt_path"
 export CATS_RESPATH="$project_path/$result_path"
 
 # 1. Collect the statistics before General finetuning & plot
-bash scripts/plot_mlp_histogram.sh $ckpt_path $result_path
+# bash scripts/plot_mlp_histogram.sh $ckpt_path $result_path
 
 # 2. Run general finetuning
 # bash scripts/general_finetuning_llama_cats.sh $ckpt_path $result_path
@@ -39,7 +38,7 @@ bash scripts/plot_mlp_histogram.sh $ckpt_path $result_path
 # python experiments/plot_act_sparsity.py
 
 # 4. Experiments for Table 1. Results are saved in "output/"
-# bash scripts/zero_shot_evaluation_without_general_finetuning.sh $ckpt_path $result_path
+bash scripts/zero_shot_evaluation_without_general_finetuning.sh $ckpt_path $result_path
 
 # 5. Experiments for Table 2 and 3
 # bash scripts/instruction_tuning.sh $ckpt_path $result_path

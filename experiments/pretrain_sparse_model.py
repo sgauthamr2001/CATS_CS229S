@@ -77,10 +77,10 @@ def prepare_sparse_model(
 ):
     # Register for AutoConfig and AutoModelforCausalLM
     model_type = get_model_type_from_name(base_model_name)
-    BaseConfig = MistralConfig if model_type == MISTRAL else LlamaConfig
-    BaseCausalLM = MistralForCausalLM if model_type == MISTRAL else LlamaForCausalLM
-    SparseConfig = SparseMistralConfig if model_type == MISTRAL else SparseLlamaConfig
-    SparseCausalLM = SparseMistralforCausalLM if model_type == MISTRAL else SparseLlamaForCausalLM
+    BaseConfig = MistralConfig 
+    BaseCausalLM = MistralForCausalLM 
+    SparseConfig = SparseMistralConfig 
+    SparseCausalLM = SparseMistralforCausalLM 
     print(SparseConfig)
     SparseConfig.register_for_auto_class()
     SparseCausalLM.register_for_auto_class("AutoModelForCausalLM")

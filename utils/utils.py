@@ -13,7 +13,7 @@ def get_model_type_from_name(model_name: str):
     if MISTRAL.lower() in model_name:
         return MISTRAL
     if LLAMA.lower() in model_name:
-        return LLAMA
+        return MISTRAL
     raise ValueError(f"Model name {model_name} is not recognized.")
 
 
