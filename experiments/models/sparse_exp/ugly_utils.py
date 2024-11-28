@@ -32,6 +32,7 @@ from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
 from transformers.utils import is_sagemaker_mp_enabled, is_sagemaker_dp_enabled
 from typing import Any, Dict, Union, Optional, Tuple
 from transformers.utils import is_flash_attn_2_available, logging
+from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
 import inspect
 import math
 
@@ -1142,32 +1143,34 @@ class SparseMistralAttention(MistralAttention):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional = None,
+        past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         if "padding_mask" in kwargs:
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
+
         bsz, q_len, _ = hidden_states.size()
         #mask = abs(hidden_states - hidden_states.mean()) < self.pre_attn_threshold
         #hidden_states[mask] = 0
 
-        if self.is_stats:
-            self.pre_attn_hist_counts += torch.cat(
-                (
-                    (hidden_states < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        hidden_states.float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (hidden_states > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
+        # if self.is_stats:
+        #    self.pre_attn_hist_counts += torch.cat(
+        #        (
+        #            (hidden_states < self.hist_min).sum().unsqueeze(0),
+        #            torch.histc(
+        #                hidden_states.float(),
+        #                bins=self.num_bins - 3,
+        #                min=self.hist_min,
+        #                max=self.hist_max,
+        #            ),
+        #            (hidden_states > self.hist_max).sum().unsqueeze(0),
+        #        )
+        #    ).cpu()
 
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
@@ -1177,20 +1180,12 @@ class SparseMistralAttention(MistralAttention):
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
-        kv_seq_len = key_states.shape[-2]
-        if past_key_value is not None:
-            if self.layer_idx is None:
-                raise ValueError(
-                    f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
-                    "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
-                    "with a layer index."
-                )
-            kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
         cos, sin = self.rotary_emb(value_states, position_ids)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_value is not None:
-            cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
+            # sin and cos are specific to RoPE models; cache_position needed for the static cache
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
         # repeat k/v heads if n_kv_heads < n_heads
@@ -1199,68 +1194,58 @@ class SparseMistralAttention(MistralAttention):
 
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
 
-        if self.is_stats:
-            self.post_q_hist_counts += torch.cat(
-                (
-                    (abs(query_states) < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        abs(query_states).float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (abs(query_states) > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
+        # if self.is_stats:
+        #    self.post_q_hist_counts += torch.cat(
+        #        (
+        #            (abs(query_states) < self.hist_min).sum().unsqueeze(0),
+        #            torch.histc(
+        #                abs(query_states).float(),
+        #                bins=self.num_bins - 3,
+        #                min=self.hist_min,
+        #                max=self.hist_max,
+        #            ),
+        #            (abs(query_states) > self.hist_max).sum().unsqueeze(0),
+        #        )
+        #    ).cpu()
         
-            self.post_k_hist_counts += torch.cat(
-                (
-                    (abs(key_states) < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        abs(key_states).float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (abs(key_states) > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
+        #    self.post_k_hist_counts += torch.cat(
+        #        (
+        #            (abs(key_states) < self.hist_min).sum().unsqueeze(0),
+        #            torch.histc(
+        #                abs(key_states).float(),
+        #                bins=self.num_bins - 3,
+        #                min=self.hist_min,
+        #                max=self.hist_max,
+        #            ),
+        #            (abs(key_states) > self.hist_max).sum().unsqueeze(0),
+        #        )
+        #    ).cpu()
 
-        if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
-            raise ValueError(
-                f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
-                f" {attn_weights.size()}"
-            )
-
-        if attention_mask is not None:
-            if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
-                raise ValueError(
-                    f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
-                )
-
-            attn_weights = attn_weights + attention_mask
+        if attention_mask is not None:  # no matter the length, we just slice it
+            causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+            attn_weights = attn_weights + causal_mask
 
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
 
-        attn_threshold = 3e-5
-        mask = attn_weights < attn_threshold
-        attn_weights[mask] = 0
+        # attn_threshold = 3e-5
+        # mask = attn_weights < attn_threshold
+        # attn_weights[mask] = 0
 
-        if self.is_stats:
-            self.post_qk_hist_counts += torch.cat(
-                (
-                    (attn_weights < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        attn_weights.float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (attn_weights > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
+        # if self.is_stats:
+        #    self.post_qk_hist_counts += torch.cat(
+        #        (
+        #            (attn_weights < self.hist_min).sum().unsqueeze(0),
+        #            torch.histc(
+        #                attn_weights.float(),
+        #                bins=self.num_bins - 3,
+        #                min=self.hist_min,
+        #                max=self.hist_max,
+        #            ),
+        #            (attn_weights > self.hist_max).sum().unsqueeze(0),
+        #        )
+        #    ).cpu()
 
         # mask = attn_weights < 0.01
         # attn_weights[mask] = 0
@@ -1268,39 +1253,38 @@ class SparseMistralAttention(MistralAttention):
         # total_count = mask.numel()
         # print(f"Killed {true_count/total_count} out of the attentions")
 
-        if self.is_stats:
+        #if self.is_stats:
 
-            attn_var = attn_weights.var(dim=-1, unbiased=False)
-            attn_var = attn_var.unsqueeze(-1)
+        #    attn_var = attn_weights.var(dim=-1, unbiased=False)
+        #    attn_var = attn_var.unsqueeze(-1)
 
-            attn_mean = attn_weights.mean(dim=-1)
-            attn_mean = attn_mean.unsqueeze(-1)
+        #    attn_mean = attn_weights.mean(dim=-1)
+        #    attn_mean = attn_mean.unsqueeze(-1)
 
-            self.post_qk_mean_counts += torch.cat(
-                (
-                    (attn_mean < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        attn_mean.float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (attn_mean > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
-            self.post_qk_var_counts += torch.cat(
-                (
-                    (attn_var < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        attn_var.float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (attn_var > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
-
+        #    self.post_qk_mean_counts += torch.cat(
+        #        (
+        #            (attn_mean < self.hist_min).sum().unsqueeze(0),
+        #            torch.histc(
+        #                attn_mean.float(),
+        #                bins=self.num_bins - 3,
+        #                min=self.hist_min,
+        #                max=self.hist_max,
+        #            ),
+        #            (attn_mean > self.hist_max).sum().unsqueeze(0),
+        #        )
+        #    ).cpu()
+        #    self.post_qk_var_counts += torch.cat(
+        #        (
+        #            (attn_var < self.hist_min).sum().unsqueeze(0),
+        #            torch.histc(
+        #                attn_var.float(),
+        #                bins=self.num_bins - 3,
+        #                min=self.hist_min,
+        #                max=self.hist_max,
+        #            ),
+        #            (attn_var > self.hist_max).sum().unsqueeze(0),
+        #        )
+        #    ).cpu()
 
         attn_output = torch.matmul(attn_weights, value_states)
 
@@ -1563,9 +1547,10 @@ class SparseMistralDecoderLayer(MistralDecoderLayer):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
+        past_key_value: Optional[Cache] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
+        cache_position: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         print("hidden_states shape: ", hidden_states.shape)
@@ -1590,6 +1575,8 @@ class SparseMistralDecoderLayer(MistralDecoderLayer):
             past_key_value=past_key_value,
             output_attentions=output_attentions,
             use_cache=use_cache,
+            cache_position=cache_position,
+            **kwargs,
         )
         hidden_states = residual + hidden_states
 
