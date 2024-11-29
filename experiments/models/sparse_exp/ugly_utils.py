@@ -331,31 +331,13 @@ def set_sparse_threshold(model, sparsity_level: float, use_relu: bool = False):
                 layer.mlp.regularization_threshold = layer.mlp.dead_threshold * 1.2  # TODO: find better param
        
         if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)):
-            layer.self_attn.pre_attn_threshold = get_threshold(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.pre_attn_hist_counts,
-                sparsity_level,
-            )
-            layer.self_attn.post_qk_threshold = get_threshold(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.post_qk_hist_counts,
-                sparsity_level,
-            )
+
             layer.self_attn.post_q_threshold = get_threshold(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_q_hist_counts,
                 sparsity_level,
             )
-            layer.self_attn.post_k_threshold = get_threshold(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.post_k_hist_counts,
-                sparsity_level,
-            )
-            
-            ds_print(f"layer {i} pre_attn_threshold: {layer.self_attn.pre_attn_threshold}")
-            ds_print(f"layer {i} post_qk_threshold: {layer.self_attn.post_qk_threshold}")           
             ds_print(f"layer {i} post_q_threshold: {layer.self_attn.post_q_threshold}")
-            ds_print(f"layer {i} post_k_threshold: {layer.self_attn.post_k_threshold}") 
 
 def plot_histogram(
     bin_edges,
@@ -768,18 +750,20 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
         self.post_qk_threshold = -1
         self.post_q_threshold = 0
         self.post_k_threshold = 0
+        self.kill_sparse_q = False
 
         # Activation Histograms
         self.is_collect_histogram = False
         num_bins = 20000
         self.num_bins = num_bins
-        self.hist_min = -2
-        self.hist_max = 2
+        self.hist_min = 0
+        self.hist_max = 1
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
         self.pre_mlp_std = 0
         self.pre_act_hist_counts = torch.zeros(num_bins - 1)
         self.post_act_hist_counts = torch.zeros(num_bins - 1)
+        self.post_q_hist_counts = torch.zeros(num_bins - 1)
 
     def activate_stats(self):
         self.is_stats = True
@@ -835,6 +819,25 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+
+        if(self.kill_sparse_q):
+            print("Killing sparse q")
+            mask = abs(query_states - query_states.mean()) < self.post_q_threshold
+            query_states[mask] = 0
+
+        if self.is_stats:
+            self.post_q_hist_counts += torch.cat(
+                (
+                    (abs(query_states) < self.hist_min).sum().unsqueeze(0),
+                    torch.histc(
+                        abs(query_states).float(),
+                        bins=self.num_bins - 3,
+                        min=self.hist_min,
+                        max=self.hist_max,
+                    ),
+                    (abs(query_states) > self.hist_max).sum().unsqueeze(0),
+                )
+            ).cpu()
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
@@ -1113,6 +1116,8 @@ class SparseMistralAttention(MistralAttention):
         self.post_qk_threshold = -1
         self.post_q_threshold = 0
         self.post_k_threshold = 0
+
+        self.kill_sparse_q = False
 
         # Activation Histograms
         self.is_collect_histogram = False
@@ -1630,14 +1635,18 @@ class SparseMistralforCausalLM(MistralForCausalLM):
             if config.thresholds is not None:
                 for idx, m in enumerate(self.model.layers):
                     if isinstance(m.mlp, MistralSparseSiluMLP):
-                        m.mlp.dead_threshold = config.thresholds[idx]
-                        m.mlp.pre_mlp_threshold = getattr(config, "pre_mlp_thresholds", [0] * len(self.model.layers))[
-                            idx
-                        ]
-                        m.mlp.sparse_act_fn.set_new_threshold(m.mlp.dead_threshold)
+                        # m.mlp.dead_threshold = config.thresholds[idx]
+                        # m.mlp.pre_mlp_threshold = getattr(config, "pre_mlp_thresholds", [0] * len(self.model.layers))[
+                        #    idx
+                        #]
+                        #m.mlp.sparse_act_fn.set_new_threshold(m.mlp.dead_threshold)
                         m.mlp.kill_sparse_swish_outputs = True
                         m.mlp.use_relu = getattr(config, "use_relu", False)
                         m.mlp.use_resilu = getattr(config, "use_resilu", False)
+                    if isinstance(m.self_attn, (SparseMistralAttention, SparseMistralFlashAttention)):
+                        m.self_attn.post_q_threshold = config.thresholds[idx]
+                        m.self_attn.kill_sparse_q = True 
+
         if config.use_sparse_predictor:
             self.apply_sparse_predictor(init_svd=config.init_svd)
 

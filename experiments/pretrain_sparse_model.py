@@ -433,7 +433,7 @@ def train(exp_config, use_wandb: bool = True, use_sweep: bool = False):
     if exp_config.model_save:
         # Save thresholds
         if exp_config.use_sparse_model:
-            thresholds = [float(m.mlp.dead_threshold) for m in model.model.layers]
+            thresholds = [float(m.self_attn.post_q_threshold) for m in model.model.layers]
             model.config.thresholds = thresholds
         if exp_config.use_relu:
             no_adapter_checkpoint_dir = checkpoint_dir + f"_no_adapter"
