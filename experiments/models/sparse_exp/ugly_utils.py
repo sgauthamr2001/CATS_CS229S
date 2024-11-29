@@ -163,7 +163,7 @@ def apply_sparse_silu_mlp(
     print(attn)
     if(attn):
         print("Using custom attention.")
-        SparseAttn = get_attn_class(model, False)
+        SparseAttn = get_attn_class(model, True)
 
         for layer in model.model.layers: 
             original_attn = layer.self_attn
