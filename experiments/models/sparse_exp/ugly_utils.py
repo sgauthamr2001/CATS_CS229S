@@ -825,19 +825,7 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
             mask = abs(query_states - query_states.mean()) < self.post_q_threshold
             query_states[mask] = 0
 
-        if self.is_stats:
-            self.post_q_hist_counts += torch.cat(
-                (
-                    (abs(query_states) < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        abs(query_states).float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (abs(query_states) > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
+        
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
@@ -926,6 +914,20 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
             query_states = query_states.to(target_dtype)
             key_states = key_states.to(target_dtype)
             value_states = value_states.to(target_dtype)
+        
+        if self.is_stats:
+            self.post_q_hist_counts += torch.cat(
+                (
+                    (abs(key_states) < self.hist_min).sum().unsqueeze(0),
+                    torch.histc(
+                        abs(key_states).float(),
+                        bins=self.num_bins - 3,
+                        min=self.hist_min,
+                        max=self.hist_max,
+                    ),
+                    (abs(key_states) > self.hist_max).sum().unsqueeze(0),
+                )
+            ).cpu()
 
         # Reashape to the expected shape for Flash Attention
         query_states = query_states.transpose(1, 2)
