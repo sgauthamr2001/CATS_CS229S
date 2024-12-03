@@ -610,12 +610,12 @@ def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_
         ):  # Can set the threshold only the relevant statistics is collected.
             act_dict[i] = (
                 layer.self_attn.histogram_bins,
-                layer.self_attn.pre_attn_hist_counts,
-                layer.self_attn.post_qk_hist_counts,
-                layer.self_attn.post_qk_var_counts,
-                layer.self_attn.post_qk_mean_counts,
+                #layer.self_attn.pre_attn_hist_counts,
+                #layer.self_attn.post_qk_hist_counts,
+                #layer.self_attn.post_qk_var_counts,
+                #layer.self_attn.post_qk_mean_counts,
                 layer.self_attn.post_q_hist_counts,
-                layer.self_attn.post_k_hist_counts,
+                #layer.self_attn.post_k_hist_counts,
             )
     ds_print("Saving activation histograms...\n\n\n")
     torch.save(act_dict, dirname + "/attn_layers.pt")
@@ -641,12 +641,12 @@ def load_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_
         if isinstance(layer.self_attn, SparseMistralAttention) and layer.self_attn.is_stats:
             (
                 layer.self_attn.histogram_bins,
-                layer.self_attn.pre_attn_hist_counts,
-                layer.self_attn.post_qk_hist_counts,
-                layer.self_attn.post_qk_var_counts,
-                layer.self_attn.post_qk_mean_counts,
+                #layer.self_attn.pre_attn_hist_counts,
+                #layer.self_attn.post_qk_hist_counts,
+                #layer.self_attn.post_qk_var_counts,
+                #layer.self_attn.post_qk_mean_counts,
                 layer.self_attn.post_q_hist_counts,
-                layer.self_attn.post_k_hist_counts,
+                #layer.self_attn.post_k_hist_counts,
             ) = act_dict[i]
 
 def enable_last_k_modules(model, start_module_idx: int):
@@ -754,10 +754,10 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
 
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 20000
+        num_bins = 200000
         self.num_bins = num_bins
         self.hist_min = 0
-        self.hist_max = 1
+        self.hist_max = 10
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
         self.pre_mlp_std = 0
