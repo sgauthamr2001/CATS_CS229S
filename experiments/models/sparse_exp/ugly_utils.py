@@ -163,7 +163,7 @@ def apply_sparse_silu_mlp(
     print(attn)
     if(attn):
         print("Using custom attention.")
-        SparseAttn = get_attn_class(model, True)
+        SparseAttn = get_attn_class(model, False)
 
         for layer in model.model.layers: 
             original_attn = layer.self_attn
@@ -511,7 +511,6 @@ def plot_histogram_log(
     # Close the figure to free memory
     plt.close(fig)
 
-
 def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str):
     SparseMLP = get_mlp_class(model)
     SparseAttn = get_attn_class(model, False)
@@ -582,7 +581,6 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
     #            layer_index=i,
     #        )
             
-
 def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_hist"):
     os.makedirs(dirname, exist_ok=True)
     SparseMLP = get_mlp_class(model)
@@ -1123,7 +1121,7 @@ class SparseMistralAttention(MistralAttention):
 
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 20000
+        num_bins = 200000
         self.num_bins = num_bins
         self.hist_min = 0
         self.hist_max = 1
@@ -1240,19 +1238,19 @@ class SparseMistralAttention(MistralAttention):
         # mask = attn_weights < attn_threshold
         # attn_weights[mask] = 0
 
-        # if self.is_stats:
-        #    self.post_qk_hist_counts += torch.cat(
-        #        (
-        #            (attn_weights < self.hist_min).sum().unsqueeze(0),
-        #            torch.histc(
-        #                attn_weights.float(),
-        #                bins=self.num_bins - 3,
-        #                min=self.hist_min,
-        #                max=self.hist_max,
-        #            ),
-        #            (attn_weights > self.hist_max).sum().unsqueeze(0),
-        #        )
-        #    ).cpu()
+        if self.is_stats:
+            self.post_q_hist_counts += torch.cat(
+                (
+                    (attn_weights < self.hist_min).sum().unsqueeze(0),
+                    torch.histc(
+                        attn_weights.float(),
+                        bins=self.num_bins - 3,
+                        min=self.hist_min,
+                            max=self.hist_max,
+                    ),
+                    (attn_weights > self.hist_max).sum().unsqueeze(0),
+                )
+            ).cpu()
 
         # mask = attn_weights < 0.01
         # attn_weights[mask] = 0
