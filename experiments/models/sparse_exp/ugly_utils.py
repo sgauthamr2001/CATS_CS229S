@@ -517,70 +517,70 @@ def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str
     SparseAttn = get_attn_class(model, False)
     SparseAttnFlash = get_attn_class(model, True)
 
-    for i, layer in enumerate(model.model.layers):
-        if isinstance(layer.mlp, SparseMLP) and layer.mlp.is_stats:
-            # Can set the threshold only the relevant statistics is collected.
-            plot_title = f"Layer: {i} Post-Activation Absolute Distribution"
-            plot_histogram(
-                layer.mlp.histogram_bins,
-                layer.mlp.post_act_hist_counts,
-                layer.mlp.dead_threshold,
-                plot_title,
-                fig_dir,
-                activation_histogram_dir,
-                layer_index=i,
-            )
-        if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)) and layer.self_attn.is_stats:
-            plot_title = f"Layer: {i} Post QK_T Distribution"
-            plot_histogram(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.post_qk_hist_counts,
-                layer.self_attn.post_qk_threshold,
-                plot_title,
-                fig_dir,
-                activation_histogram_dir,
-                layer_index=i,
-            )
-            plot_title = f"Layer: {i} Q Distribution"
-            plot_histogram(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.post_q_hist_counts,
-                layer.self_attn.post_q_threshold,
-                plot_title,
-                fig_dir,
-                activation_histogram_dir,
-                layer_index=i,
-            )
-            plot_title = f"Layer: {i} K Distribution"
-            plot_histogram(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.post_k_hist_counts,
-                layer.self_attn.post_k_threshold,
-                plot_title,
-                fig_dir,
-                activation_histogram_dir,
-                layer_index=i,
-            )
-            plot_title = f"Layer: {i} QK-Var Distribution"
-            plot_histogram(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.post_qk_var_counts,
-                0,
-                plot_title,
-                fig_dir,
-                activation_histogram_dir,
-                layer_index=i,
-            )
-            plot_title = f"Layer: {i} QK-Mean Distribution"
-            plot_histogram(
-                layer.self_attn.histogram_bins,
-                layer.self_attn.post_qk_mean_counts,
-                0,
-                plot_title,
-                fig_dir,
-                activation_histogram_dir,
-                layer_index=i,
-            )
+    #for i, layer in enumerate(model.model.layers):
+    #    if isinstance(layer.mlp, SparseMLP) and layer.mlp.is_stats:
+    #        # Can set the threshold only the relevant statistics is collected.
+    #        plot_title = f"Layer: {i} Post-Activation Absolute Distribution"
+    #        plot_histogram(
+    #            layer.mlp.histogram_bins,
+    #            layer.mlp.post_act_hist_counts,
+    #            layer.mlp.dead_threshold,
+    #            plot_title,
+    #            fig_dir,
+    #            activation_histogram_dir,
+    #            layer_index=i,
+    #        )
+    #    if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)) and layer.self_attn.is_stats:
+    #        plot_title = f"Layer: {i} Post QK_T Distribution"
+    #        plot_histogram(
+    #            layer.self_attn.histogram_bins,
+    #            layer.self_attn.post_qk_hist_counts,
+    #            layer.self_attn.post_qk_threshold,
+    #            plot_title,
+    #            fig_dir,
+    #            activation_histogram_dir,
+    #            layer_index=i,
+    #       )
+    #        plot_title = f"Layer: {i} Q Distribution"
+    #        plot_histogram(
+    #            layer.self_attn.histogram_bins,
+    #            layer.self_attn.post_q_hist_counts,
+    #            layer.self_attn.post_q_threshold,
+    #            plot_title,
+    #            fig_dir,
+    #            activation_histogram_dir,
+    #            layer_index=i,
+    #        )
+    #        plot_title = f"Layer: {i} K Distribution"
+    #        plot_histogram(
+    #            layer.self_attn.histogram_bins,
+    #            layer.self_attn.post_k_hist_counts,
+    #            layer.self_attn.post_k_threshold,
+    #            plot_title,
+    #            fig_dir,
+    #            activation_histogram_dir,
+    #            layer_index=i,
+    #        )
+    #        plot_title = f"Layer: {i} QK-Var Distribution"
+    #        plot_histogram(
+    #            layer.self_attn.histogram_bins,
+    #            layer.self_attn.post_qk_var_counts,
+    #            0,
+    #            plot_title,
+    #            fig_dir,
+    #            activation_histogram_dir,
+    #            layer_index=i,
+    #        )
+    #        plot_title = f"Layer: {i} QK-Mean Distribution"
+    #        plot_histogram(
+    #            layer.self_attn.histogram_bins,
+    #            layer.self_attn.post_qk_mean_counts,
+    #            0,
+    #            plot_title,
+    #            fig_dir,
+    #            activation_histogram_dir,
+    #            layer_index=i,
+    #        )
             
 
 def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_hist"):
