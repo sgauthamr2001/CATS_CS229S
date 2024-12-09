@@ -14,7 +14,7 @@
 
 echo "Plotting the MLP activation histograms for Mistral"
 deepspeed --master_port 12330 experiments/pretrain_sparse_model.py \
-  --use_sparse_model --targeted_sparsity 0.5 \
+  --use_sparse_model --targeted_sparsity 0.999 \
   --set_sparsity_aware_threshold --print_sparsity --is_plot \
   --max_steps 1 \
   --train_batch_size 1 --test_batch_size 1\

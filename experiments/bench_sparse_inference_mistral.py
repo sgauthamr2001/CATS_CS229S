@@ -1,11 +1,15 @@
+import torch
+import os
+from torch.utils.data import DataLoader
+
 from transformers import (
     AutoTokenizer,
     MistralForCausalLM,
     MistralConfig,
 )
-from torch.utils.data import DataLoader
-from utils.constants import MISTRAL_7B, REFINED_WEB
-from experiments.models.sparse_silu.ugly_utils import *
+# from torch.utils.data import DataLoader
+from utils.constants import REFINED_WEB, MISTRAL_7B
+from ckpt_z2.general_finetuning.sparse_mistral_7b_refined_web_50p_no_adapter_1steps.ugly_utils import *
 from experiments.data.get_dataset import get_dataset
 from tqdm import tqdm
 import argparse
@@ -55,10 +59,10 @@ def benchmark_decode(B, bm, method, gen_len, act_hist_path, base_model_name):
     dataset_type = REFINED_WEB
     model_type = MISTRAL_7B
     model, tokenizer = prepare_sparse_model(base_model_name)
-    activate_stats(model)
-    load_act_hist(model, act_hist_path)
-    set_sparse_threshold(model, 0.5)
-    deactivate_stats(model)
+    # activate_stats(model)
+    # load_act_hist(model, act_hist_path)
+    # set_sparse_threshold(model, 0.5)
+    # deactivate_stats(model)
     dataset = get_dataset(dataset_type, tokenizer, model_type, max_seq_length=1000)
     _, _, test_dataset = dataset.get_tokenized_dataset()
     data_collator = dataset.get_data_collator()
@@ -130,7 +134,7 @@ if __name__ == "__main__":
         "refined_web_activation_histogram.pt",
     )
     base_path = os.path.join(
-        args.root_path, args.weights_dir, "general_finetuning", "sparse_mistral_7b_refined_web_50p_no_adapter_350steps"
+        args.root_path, args.weights_dir, "general_finetuning", "sparse_mistral_7b_refined_web_50p_no_adapter_1steps"
     )
     print(base_path)
     benchmark_decode(args.B, args.bm, args.method, args.gen, act_hist_path, base_path)

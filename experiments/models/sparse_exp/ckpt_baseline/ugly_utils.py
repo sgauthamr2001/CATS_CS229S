@@ -161,10 +161,11 @@ def apply_sparse_silu_mlp(
         layer.mlp = new_mlp
     
     print(attn)
-    if(attn):
+    if(False):
         print("Using custom attention.")
-        SparseAttn = get_attn_class(model, False)
+        SparseAttn = get_attn_class(model, True)
 
+        i = 0
         for layer in model.model.layers: 
             original_attn = layer.self_attn
             new_attn = SparseAttn(config=original_attn.config, layer_idx=original_attn.layer_idx)
@@ -172,6 +173,9 @@ def apply_sparse_silu_mlp(
             for attr in vars(original_attn):
                 setattr(new_attn, attr, getattr(original_attn, attr))
                 layer.self_attn = new_attn
+                layer.self_attn.layer_idx = i
+
+            i += 1
                 
 def apply_sparse_attention(
     model,
@@ -331,13 +335,31 @@ def set_sparse_threshold(model, sparsity_level: float, use_relu: bool = False):
                 layer.mlp.regularization_threshold = layer.mlp.dead_threshold * 1.2  # TODO: find better param
        
         if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)):
-
+            layer.self_attn.pre_attn_threshold = get_threshold(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.pre_attn_hist_counts,
+                sparsity_level,
+            )
+            layer.self_attn.post_qk_threshold = get_threshold(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_qk_hist_counts,
+                sparsity_level,
+            )
             layer.self_attn.post_q_threshold = get_threshold(
                 layer.self_attn.histogram_bins,
                 layer.self_attn.post_q_hist_counts,
                 sparsity_level,
             )
+            layer.self_attn.post_k_threshold = get_threshold(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_k_hist_counts,
+                sparsity_level,
+            )
+            
+            ds_print(f"layer {i} pre_attn_threshold: {layer.self_attn.pre_attn_threshold}")
+            ds_print(f"layer {i} post_qk_threshold: {layer.self_attn.post_qk_threshold}")           
             ds_print(f"layer {i} post_q_threshold: {layer.self_attn.post_q_threshold}")
+            ds_print(f"layer {i} post_k_threshold: {layer.self_attn.post_k_threshold}") 
 
 def plot_histogram(
     bin_edges,
@@ -511,76 +533,78 @@ def plot_histogram_log(
     # Close the figure to free memory
     plt.close(fig)
 
+
 def plot_activation_histogram(model, fig_dir: str, activation_histogram_dir: str):
     SparseMLP = get_mlp_class(model)
     SparseAttn = get_attn_class(model, False)
     SparseAttnFlash = get_attn_class(model, True)
 
-    #for i, layer in enumerate(model.model.layers):
-    #    if isinstance(layer.mlp, SparseMLP) and layer.mlp.is_stats:
-    #        # Can set the threshold only the relevant statistics is collected.
-    #        plot_title = f"Layer: {i} Post-Activation Absolute Distribution"
-    #        plot_histogram(
-    #            layer.mlp.histogram_bins,
-    #            layer.mlp.post_act_hist_counts,
-    #            layer.mlp.dead_threshold,
-    #            plot_title,
-    #            fig_dir,
-    #            activation_histogram_dir,
-    #            layer_index=i,
-    #        )
-    #    if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)) and layer.self_attn.is_stats:
-    #        plot_title = f"Layer: {i} Post QK_T Distribution"
-    #        plot_histogram(
-    #            layer.self_attn.histogram_bins,
-    #            layer.self_attn.post_qk_hist_counts,
-    #            layer.self_attn.post_qk_threshold,
-    #            plot_title,
-    #            fig_dir,
-    #            activation_histogram_dir,
-    #            layer_index=i,
-    #       )
-    #        plot_title = f"Layer: {i} Q Distribution"
-    #        plot_histogram(
-    #            layer.self_attn.histogram_bins,
-    #            layer.self_attn.post_q_hist_counts,
-    #            layer.self_attn.post_q_threshold,
-    #            plot_title,
-    #            fig_dir,
-    #            activation_histogram_dir,
-    #            layer_index=i,
-    #        )
-    #        plot_title = f"Layer: {i} K Distribution"
-    #        plot_histogram(
-    #            layer.self_attn.histogram_bins,
-    #            layer.self_attn.post_k_hist_counts,
-    #            layer.self_attn.post_k_threshold,
-    #            plot_title,
-    #            fig_dir,
-    #            activation_histogram_dir,
-    #            layer_index=i,
-    #        )
-    #        plot_title = f"Layer: {i} QK-Var Distribution"
-    #        plot_histogram(
-    #            layer.self_attn.histogram_bins,
-    #            layer.self_attn.post_qk_var_counts,
-    #            0,
-    #            plot_title,
-    #            fig_dir,
-    #            activation_histogram_dir,
-    #            layer_index=i,
-    #        )
-    #        plot_title = f"Layer: {i} QK-Mean Distribution"
-    #        plot_histogram(
-    #            layer.self_attn.histogram_bins,
-    #            layer.self_attn.post_qk_mean_counts,
-    #            0,
-    #            plot_title,
-    #            fig_dir,
-    #            activation_histogram_dir,
-    #            layer_index=i,
-    #        )
+    for i, layer in enumerate(model.model.layers):
+        if isinstance(layer.mlp, SparseMLP) and layer.mlp.is_stats:
+            # Can set the threshold only the relevant statistics is collected.
+            plot_title = f"Layer: {i} Post-Activation Absolute Distribution"
+            plot_histogram(
+                layer.mlp.histogram_bins,
+                layer.mlp.post_act_hist_counts,
+                layer.mlp.dead_threshold,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
+        if isinstance(layer.self_attn, (SparseAttn, SparseAttnFlash)) and layer.self_attn.is_stats:
+            plot_title = f"Layer: {i} Post QK_T Distribution"
+            plot_histogram(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_qk_hist_counts,
+                layer.self_attn.post_qk_threshold,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
+            plot_title = f"Layer: {i} Q Distribution"
+            plot_histogram(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_q_hist_counts,
+                layer.self_attn.post_q_threshold,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
+            plot_title = f"Layer: {i} K Distribution"
+            plot_histogram(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_k_hist_counts,
+                layer.self_attn.post_k_threshold,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
+            plot_title = f"Layer: {i} QK-Var Distribution"
+            plot_histogram(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_qk_var_counts,
+                0,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
+            plot_title = f"Layer: {i} QK-Mean Distribution"
+            plot_histogram(
+                layer.self_attn.histogram_bins,
+                layer.self_attn.post_qk_mean_counts,
+                0,
+                plot_title,
+                fig_dir,
+                activation_histogram_dir,
+                layer_index=i,
+            )
             
+
 def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_hist"):
     os.makedirs(dirname, exist_ok=True)
     SparseMLP = get_mlp_class(model)
@@ -608,12 +632,12 @@ def save_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_
         ):  # Can set the threshold only the relevant statistics is collected.
             act_dict[i] = (
                 layer.self_attn.histogram_bins,
-                #layer.self_attn.pre_attn_hist_counts,
-                #layer.self_attn.post_qk_hist_counts,
-                #layer.self_attn.post_qk_var_counts,
-                #layer.self_attn.post_qk_mean_counts,
+                layer.self_attn.pre_attn_hist_counts,
+                layer.self_attn.post_qk_hist_counts,
+                layer.self_attn.post_qk_var_counts,
+                layer.self_attn.post_qk_mean_counts,
                 layer.self_attn.post_q_hist_counts,
-                #layer.self_attn.post_k_hist_counts,
+                layer.self_attn.post_k_hist_counts,
             )
     ds_print("Saving activation histograms...\n\n\n")
     torch.save(act_dict, dirname + "/attn_layers.pt")
@@ -639,12 +663,12 @@ def load_act_hist(model, dirname="/scr/jay/models/mistral/pre_finetune/cola_act_
         if isinstance(layer.self_attn, SparseMistralAttention) and layer.self_attn.is_stats:
             (
                 layer.self_attn.histogram_bins,
-                #layer.self_attn.pre_attn_hist_counts,
-                #layer.self_attn.post_qk_hist_counts,
-                #layer.self_attn.post_qk_var_counts,
-                #layer.self_attn.post_qk_mean_counts,
+                layer.self_attn.pre_attn_hist_counts,
+                layer.self_attn.post_qk_hist_counts,
+                layer.self_attn.post_qk_var_counts,
+                layer.self_attn.post_qk_mean_counts,
                 layer.self_attn.post_q_hist_counts,
-                #layer.self_attn.post_k_hist_counts,
+                layer.self_attn.post_k_hist_counts,
             ) = act_dict[i]
 
 def enable_last_k_modules(model, start_module_idx: int):
@@ -748,20 +772,19 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
         self.post_qk_threshold = -1
         self.post_q_threshold = 0
         self.post_k_threshold = 0
-        self.kill_sparse_q = False
+        self.layer_idx = None 
 
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 200000
+        num_bins = 20000
         self.num_bins = num_bins
-        self.hist_min = 0
-        self.hist_max = 10
+        self.hist_min = -2
+        self.hist_max = 2
         self.histogram_bins = torch.linspace(self.hist_min, self.hist_max, num_bins - 2)
         self.histogram_bins = torch.cat([torch.tensor([-torch.inf]), self.histogram_bins, torch.tensor([torch.inf])])
         self.pre_mlp_std = 0
         self.pre_act_hist_counts = torch.zeros(num_bins - 1)
         self.post_act_hist_counts = torch.zeros(num_bins - 1)
-        self.post_q_hist_counts = torch.zeros(num_bins - 1)
 
     def activate_stats(self):
         self.is_stats = True
@@ -818,12 +841,61 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
-        if(self.kill_sparse_q):
-            print("Killing sparse q")
-            mask = abs(query_states - query_states.mean()) < self.post_q_threshold
-            query_states[mask] = 0
-
         
+
+        # Thresholds for 50% sparsity
+        # q_thresh = [0.4277141392, 0.621093154,  0.4667699933, 0.5116767883, 0.4863229394, 0.4863229394, 0.4882732332, 0.4667699933,
+        #             0.5038756132, 0.4667699933, 0.5116767883, 0.447217077,  0.4609191418, 0.4804220498, 0.4492173791, 0.4628694355,
+        #             0.4745711684, 0.4882732332, 0.4667699933, 0.4999749959, 0.4960744083, 0.4980247021, 0.4706705809, 0.5195279121,
+        #             0.5155773163, 0.5234284997, 0.5155773163, 0.5507326126, 0.5234284997, 0.5702855587, 0.5273290873, 0.5273290873]
+
+        # Thresholds for 70% sparsity 
+        # q_thresh = [0.7890618443, 1.015615225,  0.7968620062, 0.8554628491, 0.8163622618, 0.8124622107, 0.8163622618, 0.7812117338, 
+        #            0.8281124234, 0.7773116827, 0.8437126875, 0.7578113675, 0.7812117338, 0.7890618443, 0.7695115805, 0.7695115805, 
+        #            0.7851117849, 0.8242123723, 0.7929618955, 0.8203123212, 0.8124622107, 0.8163622618, 0.7695115805, 0.8437126875, 
+        #            0.8359125853, 0.8476127386, 0.8437126875, 0.886713326,  0.8749631643, 0.937464118,  0.886713326,  0.8984134793]
+
+        # Thresholds for 80% sparsity
+        # q_thresh = [1.132767081, 1.312469721, 1.070266128, 1.140617132, 1.078116179, 1.085916281, 1.085916281, 1.039015651, 
+        #            1.085916281, 1.023415446, 1.117166758, 1.007765174, 1.039015651, 1.039015651, 1.031215549, 1.007765174,
+        #            1.031215549, 1.101516604, 1.062466025, 1.078116179, 1.070266128, 1.070266128, 1.007765174, 1.101516604,
+        #            1.093716502, 1.101516604, 1.101516604, 1.140617132, 1.148417234, 1.226518393, 1.171867609, 1.203118086]
+
+        # q_thresh = [1.695275545, 1.906228662, 1.609374166, 1.703075647, 1.570273638, 1.609374166, 1.593724012, 1.531223059,
+        #            1.578123689, 1.476522207, 1.617174268, 1.468722105, 1.539023161, 1.49217248,  1.539023161, 1.453121901,
+        #            1.484372377, 1.648424745, 1.562473536, 1.531223059, 1.539023161, 1.546873212, 1.453121901, 1.593724012,
+        #            1.554673433, 1.546873212, 1.554673433, 1.609374166, 1.640624642, 1.734326124, 1.703075647, 1.75777638]
+
+        # Thresholds for 50% sparsity 
+        # k_thresh = [0.4941074252, 0.937464118,  0.7109106779, 0.8203123212, 0.7617114782, 0.8593629003, 0.8320125341, 0.8437126875, 
+        #            0.8359125853, 0.8398126364, 0.8710631132, 0.8281124234, 0.7890618443, 0.8320125341, 0.8007620573, 0.7851117849,
+        #            0.8124622107, 0.8124622107, 0.7968620062, 0.7929618955, 0.8359125853, 0.8085621595, 0.7265609503, 0.7538613081,
+        #            0.8163622618, 0.8281124234, 0.7929618955, 0.8242123723, 0.7929618955, 0.7890618443, 0.7538613081, 0.7304610014]
+
+        # k_thresh = [0.8124622107, 1.515622735, 1.164017558, 1.335920095, 1.226518393, 1.374970675, 1.320269823, 1.3515203, 
+        #             1.343720198,  1.328119993, 1.406221151, 1.343720198, 1.328119993, 1.35937047,  1.312469721, 1.328119993,
+        #             1.343720198,  1.343720198, 1.320269823, 1.320269823, 1.35937047,  1.328119993, 1.195267916, 1.242168665,
+        #             1.304669619,  1.312469721, 1.289019346, 1.320269823, 1.296869516, 1.296869516, 1.234368563, 1.195267916]
+
+
+        # k_thresh = [1.609374166, 2.812492371, 2.12498188,  2.437486649, 2.218733311, 2.390585899, 2.312484741, 2.468737125,
+        #            2.437486649, 2.343735218, 2.546838284, 2.499987602, 2.62498951,  2.531238079, 2.48433733,   2.62498951,
+        #            2.593739033, 2.562488556, 2.499987602, 2.546838284, 2.499987602, 2.48433733,  2.218733311, 2.343735218,
+        #            2.328084946, 2.249983788, 2.281234264, 2.312484741, 2.281234264, 2.343735218, 2.234333515, 2.156232357]
+
+        # k_thresh = [1.078116179, 1.945279241, 1.515622735, 1.749976277, 1.578123689, 1.75777638,  1.687475324, 1.749976277, 
+        #            1.749976277, 1.687475324, 1.812477231, 1.75777638,  1.773426652, 1.781226754, 1.726525903, 1.773426652,
+        #            1.773426652, 1.773426652, 1.742176175, 1.749976277, 1.75777638,  1.742176175, 1.562473536, 1.640624642,
+        #            1.679675221, 1.664025068, 1.656224847, 1.695275545, 1.664025068, 1.679675221, 1.593724012, 1.554673433]
+
+        # if(self.layer_idx > 15):
+        #    mask = abs(query_states) < q_thresh[self.layer_idx]
+        #    query_states[mask] = 0 
+
+        # if self.counts == 10:
+        #    print("Set Qs to zero.")
+        #    print((query_states == 0).float().mean())
+
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
@@ -852,6 +924,8 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
                 "The current flash attention version does not support sliding window attention, for a more memory efficient implementation"
                 " make sure to upgrade flash-attn library."
             )
+
+        # print(past_key_value)
 
         if past_key_value is not None:
             # Activate slicing cache only if the config has a value `sliding_windows` attribute
@@ -912,29 +986,21 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
             query_states = query_states.to(target_dtype)
             key_states = key_states.to(target_dtype)
             value_states = value_states.to(target_dtype)
-        
-        if self.is_stats:
-            self.post_q_hist_counts += torch.cat(
-                (
-                    (abs(key_states) < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        abs(key_states).float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                        max=self.hist_max,
-                    ),
-                    (abs(key_states) > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
+
+        # if(self.layer_idx > 15):
+        #    mask = abs(key_states) < k_thresh[self.layer_idx]
+        #    key_states[mask] = 0
+
+        # if self.counts == 10:
+        #     print("Set Ks to zero.")
+        #     print((key_states == 0).float().mean())
+
+
 
         # Reashape to the expected shape for Flash Attention
         query_states = query_states.transpose(1, 2)
         key_states = key_states.transpose(1, 2)
         value_states = value_states.transpose(1, 2)
-
-        
-        # print(query_states.shape)
-        # print(key_states.shape)
 
         attn_output = self._flash_attention_forward(
             query_states,
@@ -1041,6 +1107,21 @@ class SparseMistralFlashAttention(MistralFlashAttention2):
             attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
         else:
             if not use_sliding_windows:
+                # print(dropout)
+                # print(causal)
+                # if softmax_scale is None:
+                #    softmax_scale = (query_states.shape[-1])**0.5
+                # attn_weights = torch.matmul(query_states, key_states.transpose(2, 3))/softmax_scale
+                # causal_mask = torch.triu(torch.ones((query_states.shape[-2], key_states.shape[-2]), device = attn_weights.device), diagonal = 1)
+                # print(query_states.shape, key_states.shape)
+                # casual_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+                # attn_weights = attn_weights.masked_fill_(causal_mask == 1, -1e10)
+                # causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+                # attn_weights = attn_weights + causal_mask
+                # attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+                # attn_output = torch.matmul(attn_weights, value_states)
+                # attn_output = attn_output.transpose(1, 2).contiguous()
+
                 attn_output = flash_attn_func(
                     query_states,
                     key_states,
@@ -1121,11 +1202,9 @@ class SparseMistralAttention(MistralAttention):
         self.post_q_threshold = 0
         self.post_k_threshold = 0
 
-        self.kill_sparse_q = False
-
         # Activation Histograms
         self.is_collect_histogram = False
-        num_bins = 200000
+        num_bins = 20000
         self.num_bins = num_bins
         self.hist_min = 0
         self.hist_max = 1
@@ -1238,44 +1317,23 @@ class SparseMistralAttention(MistralAttention):
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
 
-        print(query_states.shape)
-        # print(key_states.shape)
-
-        if(self.layer_idx == 15):
-            if(query_states.shape[-2] == 1024):
-                if not os.path.isfile("q_sample/1024.pt"):
-                    torch.save(query_states, "q_sample/1024.pt")
-                    torch.save(key_states, "k_sample/1024.pt")
-                    torch.save(attn_weights, "qk_sample/1024.pt")
-            if(query_states.shape[-2] == 267):
-                if not os.path.isfile("q_sample/267.pt"):
-                    torch.save(query_states, "q_sample/267.pt")
-                    torch.save(key_states, "k_sample/267.pt")
-                    torch.save(attn_weights, "qk_sample/267.pt")
-            if(query_states.shape[-2] == 610):
-                if not os.path.isfile("q_sample/610.pt"):
-                    torch.save(query_states, "q_sample/610.pt")
-                    torch.save(key_states, "k_sample/610.pt")
-                    torch.save(attn_weights, "qk_sample/610.pt")
-
-
         # attn_threshold = 3e-5
         # mask = attn_weights < attn_threshold
         # attn_weights[mask] = 0
 
-        if self.is_stats:
-            self.post_q_hist_counts += torch.cat(
-                (
-                    (attn_weights < self.hist_min).sum().unsqueeze(0),
-                    torch.histc(
-                        attn_weights.float(),
-                        bins=self.num_bins - 3,
-                        min=self.hist_min,
-                            max=self.hist_max,
-                    ),
-                    (attn_weights > self.hist_max).sum().unsqueeze(0),
-                )
-            ).cpu()
+        # if self.is_stats:
+        #    self.post_qk_hist_counts += torch.cat(
+        #        (
+        #            (attn_weights < self.hist_min).sum().unsqueeze(0),
+        #            torch.histc(
+        #                attn_weights.float(),
+        #                bins=self.num_bins - 3,
+        #                min=self.hist_min,
+        #                max=self.hist_max,
+        #            ),
+        #            (attn_weights > self.hist_max).sum().unsqueeze(0),
+        #        )
+        #    ).cpu()
 
         # mask = attn_weights < 0.01
         # attn_weights[mask] = 0
@@ -1597,6 +1655,7 @@ class SparseMistralDecoderLayer(MistralDecoderLayer):
 
         hidden_states = self.input_layernorm(hidden_states)
 
+        print(self.self_attn)
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
@@ -1660,18 +1719,14 @@ class SparseMistralforCausalLM(MistralForCausalLM):
             if config.thresholds is not None:
                 for idx, m in enumerate(self.model.layers):
                     if isinstance(m.mlp, MistralSparseSiluMLP):
-                        # m.mlp.dead_threshold = config.thresholds[idx]
-                        # m.mlp.pre_mlp_threshold = getattr(config, "pre_mlp_thresholds", [0] * len(self.model.layers))[
-                        #    idx
-                        #]
-                        #m.mlp.sparse_act_fn.set_new_threshold(m.mlp.dead_threshold)
+                        m.mlp.dead_threshold = config.thresholds[idx]
+                        m.mlp.pre_mlp_threshold = getattr(config, "pre_mlp_thresholds", [0] * len(self.model.layers))[
+                            idx
+                        ]
+                        m.mlp.sparse_act_fn.set_new_threshold(m.mlp.dead_threshold)
                         m.mlp.kill_sparse_swish_outputs = True
                         m.mlp.use_relu = getattr(config, "use_relu", False)
                         m.mlp.use_resilu = getattr(config, "use_resilu", False)
-                    if isinstance(m.self_attn, (SparseMistralAttention, SparseMistralFlashAttention)):
-                        m.self_attn.post_q_threshold = config.thresholds[idx]
-                        m.self_attn.kill_sparse_q = True 
-
         if config.use_sparse_predictor:
             self.apply_sparse_predictor(init_svd=config.init_svd)
 
@@ -1858,7 +1913,7 @@ class LlamaSparseSiluMLP(LlamaMLP):
                     # Collect histogram stats
                     # if self.is_collect_histogram and pre_act.eq(0).float().mean() < 0.99:  # Padded dataset
                     if self.is_collect_histogram:  # Padded dataset
-                        self.collect_stats(pre_act, post_act)
+                       self.collect_stats(pre_act, post_act)
 
                 post_act[dead_neurons] = 0
 
@@ -1937,6 +1992,7 @@ class LlamaSparseDecoderLayer(LlamaDecoderLayer):
 
         hidden_states = self.input_layernorm(hidden_states)
 
+        print(self.self_attn)
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,

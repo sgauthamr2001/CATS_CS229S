@@ -30,6 +30,7 @@ if __name__ == "__main__":
     time_path = os.path.join(args.root, "experiments", "time_util_nofile.py")
     trans_path = Path(transformers.__file__).parent
     util_path = os.path.join(trans_path, "generation/utils.py")
+    print(util_path)
     backup_path = os.path.join(args.root, "experiments", "ori_util.py")
     if args.function == "backup":
         backup_ori(backup_path, util_path)

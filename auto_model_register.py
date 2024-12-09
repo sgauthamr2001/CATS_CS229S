@@ -1,8 +1,8 @@
-from experiments.models.sparse_mistral.sparse_silu import (
+from ckpt_z2.general_finetuning.sparse_mistral_7b_refined_web_50p_no_adapter_1steps.ugly_utils import (
     MistralSparseSiluMLP,
     SparseMistralforCausalLM,
     SparseMistralConfig,
-    get_sparse_mistral_config,
+    get_sparse_config,
 )
 from experiments.instruct_tuning import prepare_sparse_model
 import os
@@ -15,8 +15,8 @@ from transformers import (
 )
 from utils.constants import MISTRAL_7B
 
-# AutoConfig.register("sparse_mistral", SparseMistralConfig)
-# AutoModelForCausalLM.register(SparseMistralConfig, SparseMistralforCausalLM)
+AutoConfig.register("sparse_mistral", SparseMistralConfig)
+AutoModelForCausalLM.register(SparseMistralConfig, SparseMistralforCausalLM)
 
 # config = get_sparse_mistral_config(MistralConfig.from_pretrained(MISTRAL_7B))
 # model = SparseMistralforCausalLM.from_pretrained(MISTRAL_7B, config=config)
@@ -54,27 +54,29 @@ from utils.constants import MISTRAL_7B
 #         config.save_pretrained(path)
 
 # path = "/scr/jay/ckpt/sparse_models/unit_test"
-path = "/scr/jay/ckpt/2024-03-10/Mistral_Sparse_refined_web_50p_no_adapter"
+# path = "/scr/jay/ckpt/2024-03-10/Mistral_Sparse_refined_web_50p_no_adapter"
 # path = "thrunlab/Mistral_Sparse_refined_web_relu_2024-03-01"
-# #
-model = AutoModelForCausalLM.from_pretrained(path, trust_remote_code=True)
-tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
-config = AutoConfig.from_pretrained(path, trust_remote_code=True)
-print(config)
-print(model)
+#
+
+#path = "ckpt_z2/general_finetuning/sparse_mistral_7b_refined_web_50p_no_adapter_1steps"
+#model = AutoModelForCausalLM.from_pretrained(path, trust_remote_code=True)
+#tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+#config = AutoConfig.from_pretrained(path, trust_remote_code=True)
+#print(config)
+#print(model)
 
 
 # Register for AutoConfig and AutoModelforCausalLM
-# SparseMistralConfig.register_for_auto_class()
-# SparseMistralforCausalLM.register_for_auto_class("AutoModelForCausalLM")
+#SparseMistralConfig.register_for_auto_class()
 
-# config = SparseMistralConfig.from_pretrained(path)
-# config.path = path
-# print(config)
-# model = AutoModelForCausalLM.from_pretrained(path, config=config, trust_remote_code=True)
-# model.config = config
-# print(model)
-# print(model.config)
+#SparseMistralforCausalLM.register_for_auto_class("AutoModelForCausalLM")
+#config = SparseMistralConfig.from_pretrained(path)
+#config.path = path
+#print(config)
+#model = AutoModelForCausalLM.from_pretrained(path, config=config, trust_remote_code=True)
+#model.config = config
+#print(model)
+#print(model.config)
 
 # model, tokenizer, config = prepare_sparse_model(False, use_lora=True)
 # print(model)
